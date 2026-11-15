@@ -413,6 +413,7 @@ function createWindow() {
     minHeight: 560,
     autoHideMenuBar: true,
     title: 'My Screen',
+    icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
     backgroundColor: '#11131a',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -425,7 +426,20 @@ function createWindow() {
   });
 }
 
+// Kısayola ikinci kez tıklanırsa yeni kopya açma, mevcut pencereyi öne getir.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!app.hasSingleInstanceLock()) return;
   loadConfig();
   if (config.manageVirtualDisplay) await attachVirtualDisplay();
   refreshTargetRect();
@@ -502,5 +516,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
-  if (config.manageVirtualDisplay) detachVirtualDisplay();
+  // İkinci kopya kapanırken asıl uygulamanın sanal ekranına dokunma.
+  if (app.hasSingleInstanceLock() && config.manageVirtualDisplay) detachVirtualDisplay();
 });

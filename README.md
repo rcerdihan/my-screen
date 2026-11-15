@@ -14,6 +14,14 @@ Ekran ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalanır, NVIDIA 
 
 `start.bat` dosyasına çift tıkla (veya klasörde `npm install`, sonra `npm start`).
 
+Başlat menüsüne kısayol eklemek için (masaüstüne de eklemek istersen sonuna `-Desktop` ekle):
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\create-shortcut.ps1
+```
+
+Uygulama zaten açıkken kısayola tıklamak yeni kopya açmaz, mevcut pencereyi öne getirir. Simge `scripts\make-icon.ps1` ile üretilir.
+
 İlk açılışta Windows Güvenlik Duvarı izin sorarsa **hem özel hem ortak ağlar** için izin ver; yoksa telefon bağlanamaz.
 
 ## Telefonu bağlama

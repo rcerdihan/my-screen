@@ -1,4 +1,4 @@
-# Standart girdiden komut okuyup fareyi hareket ettirir.
+﻿# Standart girdiden komut okuyup fareyi hareket ettirir.
 #   m X Y  -> imleci fiziksel piksel konumuna taşı
 #   d / u  -> sol tuş bas / bırak
 #   r      -> sağ tık

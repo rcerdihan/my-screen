@@ -1,4 +1,4 @@
-# Sanal ekranı (Virtual Display Driver) masaüstüne bağlar veya ayırır. Yönetici izni gerekmez:
+﻿# Sanal ekranı (Virtual Display Driver) masaüstüne bağlar veya ayırır. Yönetici izni gerekmez:
 # Win+P ile "Genişlet"/"Yalnızca bilgisayar ekranı" seçmekle aynı türden bir ekran düzeni değişikliği.
 #   status                      -> sanal ekranın durumunu yazar
 #   attach W H HZ X Y           -> sanal ekranı bu çözünürlük/hız/konumla bağlar
