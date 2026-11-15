@@ -52,7 +52,48 @@ const EMPTY = {
   },
 };
 
+// ---------- yerel mod (deneysel) ----------
+const nativeCheck = $('nativeMode');
+const nativeMbpsSelect = $('nativeMbps');
+const nativeStatusEl = $('nativeStatus');
+let lastEntries = [];
+let nativeOn = false;
+try {
+  nativeOn = localStorage.getItem('nativeMode') === '1';
+} catch {}
+
+function applyNativeMode() {
+  nativeCheck.checked = nativeOn;
+  $('nativeHint').hidden = !nativeOn;
+  $('nativeRateBox').hidden = !nativeOn;
+  renderEntries(lastEntries);
+}
+nativeCheck.onchange = () => {
+  nativeOn = nativeCheck.checked;
+  try {
+    localStorage.setItem('nativeMode', nativeOn ? '1' : '0');
+  } catch {}
+  applyNativeMode();
+};
+nativeMbpsSelect.onchange = () => api.setNativeMbps(Number(nativeMbpsSelect.value));
+api.onNativeStatus((info) => {
+  if (info.state === 'idle') {
+    nativeStatusEl.hidden = true;
+    return;
+  }
+  nativeStatusEl.hidden = false;
+  if (info.state === 'stats') {
+    nativeStatusEl.textContent = `Yerel mod yayında: ${info.fps} fps · ${info.mbps.toFixed(1)} Mbps · ${info.encoder}`;
+    setStatus('live', 'Telefon yerel modda bağlı');
+  } else if (info.state === 'error') {
+    nativeStatusEl.textContent = `Yerel mod hatası: ${info.text}`;
+  } else {
+    nativeStatusEl.textContent = `Yerel mod: ${info.text}`;
+  }
+});
+
 function renderEntries(entries) {
+  lastEntries = entries;
   for (const kind of ['hotspot', 'usb', 'lan']) {
     const card = $(`card-${kind}`);
     const body = card.querySelector('[data-body]');
@@ -69,13 +110,14 @@ function renderEntries(entries) {
     for (const e of list) {
       const row = document.createElement('div');
       row.className = 'entry';
+      const useNative = nativeOn && e.nativeQr;
       const img = document.createElement('img');
-      img.src = e.qr;
+      img.src = useNative ? e.nativeQr : e.qr;
       img.alt = 'QR kod';
       const text = document.createElement('div');
       const url = document.createElement('div');
       url.className = 'url';
-      url.textContent = e.url;
+      url.textContent = useNative ? e.nativeUrl : e.url;
       const name = document.createElement('div');
       name.className = 'name';
       name.textContent = e.name;
@@ -381,7 +423,11 @@ async function probeEncoders() {
   hostWsUrl = state.hostWsUrl;
   inputCheck.checked = state.inputEnabled;
   renderDisplays(state.displays, state.selectedDisplayId);
-  renderEntries(state.entries);
+  $('modeBox').hidden = !state.nativeAvailable;
+  if (!state.nativeAvailable) nativeOn = false;
+  nativeMbpsSelect.value = String(state.nativeMbps || 30);
+  lastEntries = state.entries;
+  applyNativeMode();
   // Kare hızı hiç seçilmediyse yayınlanan ekranın yenileme hızına uyan en yüksek seçeneği kullan.
   if (!localStorage.getItem('fps')) {
     const current = state.displays.find((d) => d.id === state.selectedDisplayId);

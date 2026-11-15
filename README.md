@@ -42,6 +42,17 @@ Uygulama, Windows'un gördüğü herhangi bir ekranı yayınlar. Sanal bir monit
 
 Sanal monitörün çözünürlüğünü telefonun en-boy oranına yakın ayarlarsan (ör. 2400×1080) görüntü ekranı tam doldurur.
 
+## Yerel mod (deneysel, 120 fps'e kadar)
+
+Normal mod ekranı Electron ile yakalar ve ~48 fps'te sınırlanır. Yerel mod ekranı ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalar, NVIDIA NVENC (yoksa Intel Quick Sync) ile kodlar ve telefonda WebCodecs ile çözer. Test ortamında 140+ fps ölçüldü.
+
+1. ffmpeg kurulu olmalı: `winget install Gyan.FFmpeg` (uygulama yolu kendisi bulur; farklı bir yer için `MYSCREEN_FFMPEG` ortam değişkeni).
+2. Paneldeki **Yerel mod** kutusunu işaretle; QR kodlar `https://…:8788/native.html` adresine döner.
+3. Telefonda ilk açılışta "bağlantı gizli değil" uyarısı çıkar (sertifika bu bilgisayarda üretildi): Gelişmiş → Yine de devam et.
+4. Sorun olursa kutuyu kaldır; normal mod hiç değişmeden çalışır.
+
+Adrese `&hud` eklersen telefonda anlık fps ve çözme süresi görünür.
+
 ## Sorun giderme
 
 - **Telefon etkin noktada "internet yok" diyor:** Hyper-V/WSL/Docker ağı Windows'un internet paylaşımını kendine bağlamış olabilir. Etkin noktayı kapat, yönetici PowerShell'de `Restart-Service hns -Force` çalıştır, etkin noktayı yeniden aç.

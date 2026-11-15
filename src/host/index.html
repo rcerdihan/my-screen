@@ -18,6 +18,27 @@
         <p class="hint">Telefonla QR kodu okut ya da adresi Chrome'a yaz. İkisi de aynı ekranı açar.</p>
         <p class="hint" id="lastRequest">Telefondan henüz istek gelmedi.</p>
 
+        <div class="mode" id="modeBox" hidden>
+          <label class="check">
+            <input type="checkbox" id="nativeMode" />
+            Yerel mod (deneysel, 120 fps'e kadar)
+          </label>
+          <p class="hint" id="nativeHint" hidden>
+            QR kodlar yerel mod sayfasını açar. İlk açılışta telefon "bağlantı gizli değil" uyarısı verir:
+            Gelişmiş → Yine de devam et. Sorun olursa kutuyu kaldırıp normal modu kullan.
+          </p>
+          <label id="nativeRateBox" hidden>
+            Yerel mod kalitesi
+            <select id="nativeMbps">
+              <option value="15">15 Mbps</option>
+              <option value="30">30 Mbps</option>
+              <option value="45">45 Mbps</option>
+              <option value="60">60 Mbps</option>
+            </select>
+          </label>
+          <p class="stats" id="nativeStatus" hidden></p>
+        </div>
+
         <article class="card" id="card-hotspot">
           <div class="card-head">
             <h3>Wi-Fi etkin nokta</h3>

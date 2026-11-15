@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, screen, desktopCapturer, session, shell } = require('electron');
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -7,6 +8,8 @@ const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
+const selfsigned = require('selfsigned');
+const { createNativeStreamer } = require('./native');
 
 // Yerel ağda doğrudan bağlantı için gerçek IP adaylarını kullan (mDNS gizlemesi kapalı).
 app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
@@ -21,9 +24,12 @@ const hostKey = crypto.randomBytes(16).toString('hex');
 
 let win = null;
 let port = BASE_PORT;
-let config = { token: '', selectedDisplayId: null, inputEnabled: true };
+let securePort = 0; // yerel mod sayfası (HTTPS; telefonda WebCodecs güvenli bağlam ister)
+let config = { token: '', selectedDisplayId: null, inputEnabled: true, nativeMbps: 30 };
 let hostSocket = null;
 let viewerSocket = null;
+let nativeSocket = null;
+let native = null;
 let viewerIp = '';
 let targetRect = null; // seçili ekranın fiziksel piksel dikdörtgeni
 let helper = null;
@@ -73,6 +79,10 @@ function selectedDisplay() {
 }
 function refreshTargetRect() {
   targetRect = screen.dipToScreenRect(null, selectedDisplay().bounds);
+}
+function selectedPixelSize() {
+  const d = selectedDisplay();
+  return { width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor) };
 }
 function pushDisplays() {
   refreshTargetRect();
@@ -177,7 +187,13 @@ async function refreshNetwork(force) {
     if (!kind || !isPrivate(i.address)) continue;
     const url = `http://${i.address}:${port}/?t=${config.token}`;
     const qr = await QRCode.toDataURL(url, { margin: 1, width: 240 });
-    next.push({ kind, name: i.name, address: i.address, url, qr });
+    let nativeUrl = '';
+    let nativeQr = '';
+    if (securePort) {
+      nativeUrl = `https://${i.address}:${securePort}/native.html?t=${config.token}`;
+      nativeQr = await QRCode.toDataURL(nativeUrl, { margin: 1, width: 240 });
+    }
+    next.push({ kind, name: i.name, address: i.address, url, qr, nativeUrl, nativeQr });
   }
   entries = next;
   if (win) win.webContents.send('network', entries);
@@ -295,33 +311,114 @@ function onViewer(socket, ip) {
   send(hostSocket, { type: 'viewer-join', ip });
 }
 
+// ---------- yerel mod (deneysel) ----------
+function sendNativeStatus(info) {
+  if (win) win.webContents.send('native-status', info);
+}
+function onNative(socket, ip) {
+  if (nativeSocket) {
+    send(nativeSocket, { type: 'replaced' });
+    nativeSocket.close(4002, 'replaced');
+    native.detach(nativeSocket);
+  }
+  nativeSocket = socket;
+  logStats(`yerel telefon baglandi ${ip}`);
+  socket.on('message', (raw, isBinary) => {
+    if (isBinary) return;
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (msg.type === 'input') handleInput(msg);
+    else if (msg.type === 'stats') logStats(`telefon-yerel ${msg.line}`);
+    else if (msg.type === 'key') native.requestKey();
+  });
+  socket.on('close', () => {
+    if (nativeSocket === socket) {
+      nativeSocket = null;
+      native.detach(socket);
+      logStats('yerel telefon ayrildi');
+    }
+  });
+  if (!native.available) {
+    send(socket, { type: 'error', text: 'Bilgisayarda ffmpeg bulunamadı. Normal modu kullan.' });
+    return;
+  }
+  native.attach(socket, selectedPixelSize(), config.nativeMbps);
+}
+
+function onUpgrade(wss, req, socket, head) {
+  if (!isPrivate(req.socket.remoteAddress)) {
+    socket.destroy();
+    return;
+  }
+  const url = new URL(req.url, 'http://x');
+  const role = url.searchParams.get('role');
+  const remote = req.socket.remoteAddress;
+  let ok = false;
+  if (url.pathname === '/ws') {
+    if (role === 'host') ok = url.searchParams.get('key') === hostKey && isLoopback(remote);
+    else if (role === 'viewer' || role === 'native') ok = url.searchParams.get('t') === config.token;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    if (!ok) {
+      ws.close(4001, 'unauthorized');
+      return;
+    }
+    const ip = isLoopback(remote) ? '127.0.0.1' : cleanIp(remote);
+    if (role === 'host') onHost(ws);
+    else if (role === 'native') onNative(ws, ip);
+    else onViewer(ws, ip);
+  });
+}
+
+async function loadCertificate() {
+  const file = path.join(app.getPath('userData'), 'cert.json');
+  try {
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (saved.cert && saved.key) return saved;
+  } catch {}
+  const pems = await selfsigned.generate([{ name: 'commonName', value: 'My Screen' }], { days: 3650, keySize: 2048 });
+  const result = { cert: pems.cert, key: pems.private };
+  fs.writeFileSync(file, JSON.stringify(result));
+  return result;
+}
+
+// Yerel mod için ikinci (HTTPS) sunucu. Açılamazsa normal mod etkilenmez.
+async function startSecureServer() {
+  try {
+    const { cert, key } = await loadCertificate();
+    const server = https.createServer({ cert, key }, serveClient);
+    const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+    server.on('connection', (socket) => noteRequest(socket.remoteAddress, 'tcp-https'));
+    server.on('upgrade', (req, socket, head) => onUpgrade(wss, req, socket, head));
+    let candidate = port + 1;
+    await new Promise((resolve, reject) => {
+      server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE' && candidate < port + 20) {
+          candidate += 1;
+          server.listen(candidate, '0.0.0.0');
+        } else {
+          reject(err);
+        }
+      });
+      server.on('listening', resolve);
+      server.listen(candidate, '0.0.0.0');
+    });
+    securePort = candidate;
+  } catch (err) {
+    logStats(`yerel HTTPS sunucusu acilamadi: ${err.message}`);
+  }
+}
+
 function startServer() {
   return new Promise((resolve, reject) => {
     const server = http.createServer(serveClient);
     const wss = new WebSocketServer({ noServer: true });
     server.on('connection', (socket) => noteRequest(socket.remoteAddress, 'tcp'));
-    server.on('upgrade', (req, socket, head) => {
-      if (!isPrivate(req.socket.remoteAddress)) {
-        socket.destroy();
-        return;
-      }
-      const url = new URL(req.url, 'http://x');
-      const role = url.searchParams.get('role');
-      const remote = req.socket.remoteAddress;
-      let ok = false;
-      if (url.pathname === '/ws') {
-        if (role === 'host') ok = url.searchParams.get('key') === hostKey && isLoopback(remote);
-        else if (role === 'viewer') ok = url.searchParams.get('t') === config.token;
-      }
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        if (!ok) {
-          ws.close(4001, 'unauthorized');
-          return;
-        }
-        if (role === 'host') onHost(ws);
-        else onViewer(ws, isLoopback(remote) ? '127.0.0.1' : cleanIp(remote));
-      });
-    });
+    server.on('upgrade', (req, socket, head) => onUpgrade(wss, req, socket, head));
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE' && port < BASE_PORT + 20) {
         port += 1;
@@ -361,6 +458,17 @@ app.whenReady().then(async () => {
   loadConfig();
   refreshTargetRect();
   await startServer();
+  native = createNativeStreamer({
+    log: logStats,
+    onStatus: sendNativeStatus,
+    cache: config.nativeOutputs || {},
+    saveCache: (map) => {
+      config.nativeOutputs = map;
+      saveConfig();
+    },
+  });
+  native.warmup(selectedPixelSize());
+  await startSecureServer();
   startHelper();
 
   // Yakalanacak ekranı pencere sormadan biz seçiyoruz.
@@ -387,6 +495,8 @@ app.whenReady().then(async () => {
       inputEnabled: config.inputEnabled,
       entries,
       port,
+      nativeAvailable: native.available && !!securePort,
+      nativeMbps: config.nativeMbps,
       hostWsUrl: `ws://127.0.0.1:${port}/ws?role=host&key=${hostKey}`,
     };
   });
@@ -394,6 +504,13 @@ app.whenReady().then(async () => {
     config.selectedDisplayId = id;
     refreshTargetRect();
     saveConfig();
+    native.warmup(selectedPixelSize());
+    native.restart(selectedPixelSize());
+  });
+  ipcMain.handle('set-native-mbps', (e, value) => {
+    config.nativeMbps = Math.max(5, Math.min(80, Number(value) || 30));
+    saveConfig();
+    native.restart();
   });
   ipcMain.handle('set-input-enabled', (e, value) => {
     config.inputEnabled = !!value;
@@ -402,8 +519,13 @@ app.whenReady().then(async () => {
   ipcMain.on('stats-log', (e, line) => logStats(line));
   ipcMain.handle('open-hotspot-settings', () => shell.openExternal('ms-settings:network-mobilehotspot'));
 
-  screen.on('display-added', pushDisplays);
-  screen.on('display-removed', pushDisplays);
+  const onDisplaysChanged = () => {
+    native.resetCache();
+    native.warmup(selectedPixelSize());
+    pushDisplays();
+  };
+  screen.on('display-added', onDisplaysChanged);
+  screen.on('display-removed', onDisplaysChanged);
   screen.on('display-metrics-changed', pushDisplays);
 
   createWindow();
@@ -420,5 +542,6 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (helper) helper.kill();
+  if (native) native.detach();
   app.quit();
 });
