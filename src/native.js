@@ -1,6 +1,6 @@
-// Yerel yakalama (deneysel): ekranı ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalar,
+// Ekran yayını: ekranı ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalar,
 // donanım kodlayıcıyla H.264'e çevirir ve kareleri WebSocket üzerinden telefona gönderir.
-// Telefon tarafı bunları WebCodecs ile çözer (src/client/native.js).
+// Telefon tarafı bunları WebCodecs ile çözer (src/client/client.js).
 const { spawn, execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -261,6 +261,10 @@ function createNativeStreamer({ log, onStatus, cache = {}, saveCache = () => {} 
     // Ekran değişti ya da telefon temiz bir anahtar kare istedi.
     restart(displaySize) {
       if (displaySize) display = displaySize;
+      if (socket) start();
+    },
+    setBitrate(value) {
+      mbps = value;
       if (socket) start();
     },
     requestKey() {

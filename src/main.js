@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, desktopCapturer, session, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
@@ -11,26 +11,16 @@ const QRCode = require('qrcode');
 const selfsigned = require('selfsigned');
 const { createNativeStreamer } = require('./native');
 
-// Yerel ağda doğrudan bağlantı için gerçek IP adaylarını kullan (mDNS gizlemesi kapalı).
-app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
-// GPU korumalı alanı açıkken Windows'un donanım video kodlayıcıları (Intel Quick Sync / NVENC)
-// görünmüyor ve 1080p60 yazılımla kodlanmak zorunda kalıyor. Uygulama yalnızca kendi yerel
-// sayfalarını gösterdiği için korumalı alanı kapatmak kabul edilebilir.
-app.commandLine.appendSwitch('disable-gpu-sandbox');
-
 const CLIENT_DIR = path.join(__dirname, 'client');
-const BASE_PORT = 8787;
-const hostKey = crypto.randomBytes(16).toString('hex');
+const BASE_PORT = 8787; // HTTP: yalnızca HTTPS sayfasına yönlendirir (eski kısayollar çalışsın diye)
 
 let win = null;
 let port = BASE_PORT;
-let securePort = 0; // yerel mod sayfası (HTTPS; telefonda WebCodecs güvenli bağlam ister)
-let config = { token: '', selectedDisplayId: null, inputEnabled: true, nativeMbps: 30 };
-let hostSocket = null;
+let securePort = 0; // telefon sayfası (HTTPS; telefonda WebCodecs güvenli bağlam ister)
+let serverError = '';
+let config = { token: '', selectedDisplayId: null, inputEnabled: true, nativeMbps: 30, nativeOutputs: {} };
 let viewerSocket = null;
-let nativeSocket = null;
-let native = null;
-let viewerIp = '';
+let streamer = null;
 let targetRect = null; // seçili ekranın fiziksel piksel dikdörtgeni
 let helper = null;
 let entries = [];
@@ -55,6 +45,10 @@ function saveConfig() {
     fs.writeFileSync(configPath(), JSON.stringify(config, null, 2));
   } catch {}
 }
+function logStats(line) {
+  const time = new Date().toLocaleTimeString('tr-TR');
+  fs.appendFile(path.join(app.getPath('userData'), 'stats.log'), `${time} ${String(line).slice(0, 400)}\n`, () => {});
+}
 
 // ---------- ekranlar ----------
 function listDisplays() {
@@ -77,15 +71,23 @@ function selectedDisplay() {
   const others = all.filter((d) => d.id !== primary.id);
   return others.find((d) => /VDD|Virtual/i.test(d.label || '')) || others[0] || primary;
 }
-function refreshTargetRect() {
-  targetRect = screen.dipToScreenRect(null, selectedDisplay().bounds);
-}
 function selectedPixelSize() {
   const d = selectedDisplay();
   return { width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor) };
 }
-function pushDisplays() {
+function refreshTargetRect() {
+  targetRect = screen.dipToScreenRect(null, selectedDisplay().bounds);
+}
+let lastDisplayKey = '';
+function onDisplaysChanged() {
   refreshTargetRect();
+  // Görev çubuğu gibi küçük değişikliklerde de tetikleniyor; yalnızca ekran düzeni değiştiyse yeniden başlat.
+  const key = JSON.stringify(listDisplays());
+  if (key === lastDisplayKey) return;
+  lastDisplayKey = key;
+  streamer.resetCache();
+  streamer.warmup(selectedPixelSize());
+  streamer.restart(selectedPixelSize());
   if (win) win.webContents.send('displays', { displays: listDisplays(), selectedDisplayId: selectedDisplay().id });
 }
 
@@ -132,6 +134,23 @@ function handleInput(msg) {
 }
 
 // ---------- ağ arayüzleri ----------
+function cleanIp(addr) {
+  return (addr || '').replace(/^::ffff:/, '');
+}
+function isLoopback(addr) {
+  const ip = cleanIp(addr);
+  return ip === '127.0.0.1' || ip === '::1';
+}
+// Yalnızca yerel (özel) ağ adreslerinden gelen bağlantıları kabul et.
+function isPrivate(addr) {
+  const ip = cleanIp(addr);
+  if (isLoopback(addr)) return true;
+  const m = ip.match(/^(\d+)\.(\d+)\.\d+\.\d+$/);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
 function classify(name) {
   const desc = adapterDescriptions[name] || '';
   const text = `${name} ${desc}`;
@@ -182,46 +201,27 @@ async function refreshNetwork(force) {
   lastInterfaceKey = key;
   await loadAdapterDescriptions();
   const next = [];
-  for (const i of interfaces) {
-    const kind = classify(i.name);
-    if (!kind || !isPrivate(i.address)) continue;
-    const url = `http://${i.address}:${port}/?t=${config.token}`;
-    const qr = await QRCode.toDataURL(url, { margin: 1, width: 240 });
-    let nativeUrl = '';
-    let nativeQr = '';
-    if (securePort) {
-      nativeUrl = `https://${i.address}:${securePort}/native.html?t=${config.token}`;
-      nativeQr = await QRCode.toDataURL(nativeUrl, { margin: 1, width: 240 });
+  if (securePort) {
+    for (const i of interfaces) {
+      const kind = classify(i.name);
+      if (!kind || !isPrivate(i.address)) continue;
+      const url = `https://${i.address}:${securePort}/?t=${config.token}`;
+      const qr = await QRCode.toDataURL(url, { margin: 1, width: 240 });
+      next.push({ kind, name: i.name, address: i.address, url, qr });
     }
-    next.push({ kind, name: i.name, address: i.address, url, qr, nativeUrl, nativeQr });
   }
   entries = next;
   if (win) win.webContents.send('network', entries);
 }
 
-// ---------- HTTP + WebSocket sunucusu ----------
+// ---------- sunucular ----------
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 
-// Yalnızca yerel (özel) ağ adreslerinden gelen bağlantıları kabul et.
-function isPrivate(addr) {
-  const ip = cleanIp(addr);
-  if (isLoopback(addr)) return true;
-  const m = ip.match(/^(\d+)\.(\d+)\.\d+\.\d+$/);
-  if (!m) return false;
-  const a = Number(m[1]);
-  const b = Number(m[2]);
-  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
-}
 function noteRequest(addr, what) {
   if (isLoopback(addr)) return;
   const info = { ip: cleanIp(addr), what, time: new Date().toLocaleTimeString('tr-TR') };
   fs.appendFile(path.join(app.getPath('userData'), 'requests.log'), `${info.time} ${info.ip} ${what}\n`, () => {});
   if (win) win.webContents.send('request', info);
-}
-
-function logStats(line) {
-  const time = new Date().toLocaleTimeString('tr-TR');
-  fs.appendFile(path.join(app.getPath('userData'), 'stats.log'), `${time} ${String(line).slice(0, 400)}\n`, () => {});
 }
 
 function serveClient(req, res) {
@@ -231,7 +231,8 @@ function serveClient(req, res) {
   }
   noteRequest(req.socket.remoteAddress, 'sayfa');
   const url = new URL(req.url, 'http://x');
-  const file = url.pathname === '/' ? 'index.html' : path.basename(url.pathname);
+  // native.html: deneysel sürümden kalan kısayollar için eski ad.
+  const file = url.pathname === '/' || url.pathname === '/native.html' ? 'index.html' : path.basename(url.pathname);
   const full = path.join(CLIENT_DIR, file);
   fs.readFile(full, (err, data) => {
     if (err) {
@@ -244,85 +245,30 @@ function serveClient(req, res) {
   });
 }
 
-function send(socket, msg) {
-  if (socket && socket.readyState === 1) socket.send(JSON.stringify(msg));
-}
-function cleanIp(addr) {
-  return (addr || '').replace(/^::ffff:/, '');
-}
-function isLoopback(addr) {
-  const ip = cleanIp(addr);
-  return ip === '127.0.0.1' || ip === '::1';
+// Eski http:// kısayollarını HTTPS sayfasına yönlendir.
+function redirectToSecure(req, res) {
+  if (!isPrivate(req.socket.remoteAddress) || !securePort) {
+    req.socket.destroy();
+    return;
+  }
+  const url = new URL(req.url, 'http://x');
+  const host = (req.headers.host || '').replace(/:\d+$/, '') || '127.0.0.1';
+  res.writeHead(302, { Location: `https://${host}:${securePort}/${url.search}`, 'Cache-Control': 'no-store' });
+  res.end();
 }
 
-function onHost(socket) {
-  if (hostSocket) hostSocket.close();
-  hostSocket = socket;
-  socket.on('message', (raw) => {
-    let msg;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    if (msg.type === 'offer' || msg.type === 'candidate') send(viewerSocket, msg);
-  });
-  socket.on('close', () => {
-    if (hostSocket === socket) hostSocket = null;
-  });
-  if (viewerSocket) send(hostSocket, { type: 'viewer-join', ip: viewerIp });
+function send(socket, msg) {
+  if (socket && socket.readyState === 1) socket.send(JSON.stringify(msg));
 }
 
 function onViewer(socket, ip) {
   if (viewerSocket) {
     send(viewerSocket, { type: 'replaced' });
     viewerSocket.close(4002, 'replaced');
+    streamer.detach(viewerSocket);
   }
   viewerSocket = socket;
-  viewerIp = ip;
-  socket.on('message', (raw) => {
-    let msg;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    if (msg.type === 'input') {
-      handleInput(msg);
-    } else if (msg.type === 'stats') {
-      logStats(`telefon ${msg.line}`);
-    } else if (msg.type === 'answer') {
-      send(hostSocket, msg);
-    } else if (msg.type === 'candidate') {
-      // Telefonun tarayıcısı yerel IP'yi mDNS adıyla gizler; gerçek adresi biliyoruz.
-      if (msg.candidate && typeof msg.candidate.candidate === 'string' && ip) {
-        msg.candidate.candidate = msg.candidate.candidate.replace(/\S+\.local/g, ip);
-      }
-      send(hostSocket, msg);
-    }
-  });
-  socket.on('close', () => {
-    if (viewerSocket === socket) {
-      viewerSocket = null;
-      viewerIp = '';
-      send(hostSocket, { type: 'viewer-leave' });
-    }
-  });
-  send(hostSocket, { type: 'viewer-join', ip });
-}
-
-// ---------- yerel mod (deneysel) ----------
-function sendNativeStatus(info) {
-  if (win) win.webContents.send('native-status', info);
-}
-function onNative(socket, ip) {
-  if (nativeSocket) {
-    send(nativeSocket, { type: 'replaced' });
-    nativeSocket.close(4002, 'replaced');
-    native.detach(nativeSocket);
-  }
-  nativeSocket = socket;
-  logStats(`yerel telefon baglandi ${ip}`);
+  logStats(`telefon baglandi ${ip}`);
   socket.on('message', (raw, isBinary) => {
     if (isBinary) return;
     let msg;
@@ -332,21 +278,21 @@ function onNative(socket, ip) {
       return;
     }
     if (msg.type === 'input') handleInput(msg);
-    else if (msg.type === 'stats') logStats(`telefon-yerel ${msg.line}`);
-    else if (msg.type === 'key') native.requestKey();
+    else if (msg.type === 'stats') logStats(`telefon ${msg.line}`);
+    else if (msg.type === 'key') streamer.requestKey();
   });
   socket.on('close', () => {
-    if (nativeSocket === socket) {
-      nativeSocket = null;
-      native.detach(socket);
-      logStats('yerel telefon ayrildi');
+    if (viewerSocket === socket) {
+      viewerSocket = null;
+      streamer.detach(socket);
+      logStats('telefon ayrildi');
     }
   });
-  if (!native.available) {
-    send(socket, { type: 'error', text: 'Bilgisayarda ffmpeg bulunamadı. Normal modu kullan.' });
+  if (!streamer.available) {
+    send(socket, { type: 'error', text: 'Bilgisayarda ffmpeg bulunamadı. My Screen penceresindeki talimatı izle.' });
     return;
   }
-  native.attach(socket, selectedPixelSize(), config.nativeMbps);
+  streamer.attach(socket, selectedPixelSize(), config.nativeMbps);
 }
 
 function onUpgrade(wss, req, socket, head) {
@@ -355,22 +301,14 @@ function onUpgrade(wss, req, socket, head) {
     return;
   }
   const url = new URL(req.url, 'http://x');
-  const role = url.searchParams.get('role');
+  const ok = url.pathname === '/ws' && url.searchParams.get('t') === config.token;
   const remote = req.socket.remoteAddress;
-  let ok = false;
-  if (url.pathname === '/ws') {
-    if (role === 'host') ok = url.searchParams.get('key') === hostKey && isLoopback(remote);
-    else if (role === 'viewer' || role === 'native') ok = url.searchParams.get('t') === config.token;
-  }
   wss.handleUpgrade(req, socket, head, (ws) => {
     if (!ok) {
       ws.close(4001, 'unauthorized');
       return;
     }
-    const ip = isLoopback(remote) ? '127.0.0.1' : cleanIp(remote);
-    if (role === 'host') onHost(ws);
-    else if (role === 'native') onNative(ws, ip);
-    else onViewer(ws, ip);
+    onViewer(ws, isLoopback(remote) ? '127.0.0.1' : cleanIp(remote));
   });
 }
 
@@ -386,66 +324,54 @@ async function loadCertificate() {
   return result;
 }
 
-// Yerel mod için ikinci (HTTPS) sunucu. Açılamazsa normal mod etkilenmez.
-async function startSecureServer() {
+// Sunucuyu ilk boş porta aç (first'ten başlayarak).
+function listenOn(server, first) {
+  return new Promise((resolve, reject) => {
+    let candidate = first;
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE' && candidate < first + 20) {
+        candidate += 1;
+        server.listen(candidate, '0.0.0.0');
+      } else {
+        reject(err);
+      }
+    });
+    server.on('listening', () => resolve(candidate));
+    server.listen(candidate, '0.0.0.0');
+  });
+}
+
+async function startServers() {
   try {
+    const plain = http.createServer(redirectToSecure);
+    plain.on('connection', (socket) => noteRequest(socket.remoteAddress, 'tcp'));
+    port = await listenOn(plain, BASE_PORT);
+
     const { cert, key } = await loadCertificate();
     const server = https.createServer({ cert, key }, serveClient);
     const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
     server.on('connection', (socket) => noteRequest(socket.remoteAddress, 'tcp-https'));
     server.on('upgrade', (req, socket, head) => onUpgrade(wss, req, socket, head));
-    let candidate = port + 1;
-    await new Promise((resolve, reject) => {
-      server.on('error', (err) => {
-        if (err.code === 'EADDRINUSE' && candidate < port + 20) {
-          candidate += 1;
-          server.listen(candidate, '0.0.0.0');
-        } else {
-          reject(err);
-        }
-      });
-      server.on('listening', resolve);
-      server.listen(candidate, '0.0.0.0');
-    });
-    securePort = candidate;
+    securePort = await listenOn(server, port + 1);
   } catch (err) {
-    logStats(`yerel HTTPS sunucusu acilamadi: ${err.message}`);
+    serverError = `Sunucu açılamadı: ${err.message}`;
+    logStats(serverError);
   }
-}
-
-function startServer() {
-  return new Promise((resolve, reject) => {
-    const server = http.createServer(serveClient);
-    const wss = new WebSocketServer({ noServer: true });
-    server.on('connection', (socket) => noteRequest(socket.remoteAddress, 'tcp'));
-    server.on('upgrade', (req, socket, head) => onUpgrade(wss, req, socket, head));
-    server.on('error', (err) => {
-      if (err.code === 'EADDRINUSE' && port < BASE_PORT + 20) {
-        port += 1;
-        server.listen(port, '0.0.0.0');
-      } else {
-        reject(err);
-      }
-    });
-    server.on('listening', resolve);
-    server.listen(port, '0.0.0.0');
-  });
 }
 
 // ---------- uygulama ----------
 function createWindow() {
   win = new BrowserWindow({
-    width: 1040,
-    height: 760,
-    minWidth: 820,
-    minHeight: 600,
+    width: 1000,
+    height: 720,
+    minWidth: 780,
+    minHeight: 560,
     autoHideMenuBar: true,
     title: 'My Screen',
     backgroundColor: '#11131a',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      backgroundThrottling: false,
     },
   });
   win.loadFile(path.join(__dirname, 'host', 'index.html'));
@@ -457,35 +383,19 @@ function createWindow() {
 app.whenReady().then(async () => {
   loadConfig();
   refreshTargetRect();
-  await startServer();
-  native = createNativeStreamer({
+  lastDisplayKey = JSON.stringify(listDisplays());
+  streamer = createNativeStreamer({
     log: logStats,
-    onStatus: sendNativeStatus,
+    onStatus: (info) => win && win.webContents.send('stream-status', info),
     cache: config.nativeOutputs || {},
     saveCache: (map) => {
       config.nativeOutputs = map;
       saveConfig();
     },
   });
-  native.warmup(selectedPixelSize());
-  await startSecureServer();
+  streamer.warmup(selectedPixelSize());
+  await startServers();
   startHelper();
-
-  // Yakalanacak ekranı pencere sormadan biz seçiyoruz.
-  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
-    try {
-      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
-      const wanted = String(selectedDisplay().id);
-      let source = sources.find((s) => s.display_id === wanted);
-      if (!source) {
-        const index = screen.getAllDisplays().findIndex((d) => String(d.id) === wanted);
-        source = sources[index] || sources[0];
-      }
-      callback({ video: source });
-    } catch {
-      callback({});
-    }
-  });
 
   ipcMain.handle('get-state', async () => {
     await refreshNetwork(true);
@@ -493,55 +403,48 @@ app.whenReady().then(async () => {
       displays: listDisplays(),
       selectedDisplayId: selectedDisplay().id,
       inputEnabled: config.inputEnabled,
+      mbps: config.nativeMbps,
+      ffmpegAvailable: streamer.available,
+      serverError,
       entries,
-      port,
-      nativeAvailable: native.available && !!securePort,
-      nativeMbps: config.nativeMbps,
-      hostWsUrl: `ws://127.0.0.1:${port}/ws?role=host&key=${hostKey}`,
     };
   });
   ipcMain.handle('select-display', (e, id) => {
     config.selectedDisplayId = id;
+    saveConfig();
     refreshTargetRect();
-    saveConfig();
-    native.warmup(selectedPixelSize());
-    native.restart(selectedPixelSize());
-  });
-  ipcMain.handle('set-native-mbps', (e, value) => {
-    config.nativeMbps = Math.max(5, Math.min(80, Number(value) || 30));
-    saveConfig();
-    native.restart();
+    streamer.warmup(selectedPixelSize());
+    streamer.restart(selectedPixelSize());
   });
   ipcMain.handle('set-input-enabled', (e, value) => {
     config.inputEnabled = !!value;
     saveConfig();
   });
-  ipcMain.on('stats-log', (e, line) => logStats(line));
+  ipcMain.handle('set-mbps', (e, value) => {
+    config.nativeMbps = Math.max(5, Math.min(80, Number(value) || 30));
+    saveConfig();
+    streamer.setBitrate(config.nativeMbps);
+  });
   ipcMain.handle('open-hotspot-settings', () => shell.openExternal('ms-settings:network-mobilehotspot'));
 
-  const onDisplaysChanged = () => {
-    native.resetCache();
-    native.warmup(selectedPixelSize());
-    pushDisplays();
-  };
   screen.on('display-added', onDisplaysChanged);
   screen.on('display-removed', onDisplaysChanged);
-  screen.on('display-metrics-changed', pushDisplays);
+  screen.on('display-metrics-changed', onDisplaysChanged);
 
   createWindow();
   if (process.env.MYSCREEN_TICK) {
-    // Tanı (MYSCREEN_TICK=1): köşede her karede renk değiştiren küçük pencere açar; böylece ekran
-    // sürekli güncellenir ve yakalamanın tavan kare hızı stats.log'dan okunabilir.
+    // Tanı (MYSCREEN_TICK=1): seçili ekranın köşesinde her karede renk değiştiren küçük pencere açar;
+    // ekran sürekli güncellendiği için ulaşılabilen en yüksek kare hızı stats.log'dan okunabilir.
     const b = selectedDisplay().bounds;
     const tick = new BrowserWindow({ x: b.x, y: b.y, width: 8, height: 8, frame: false, alwaysOnTop: true, skipTaskbar: true, focusable: false, resizable: false, webPreferences: { backgroundThrottling: false } });
     tick.setIgnoreMouseEvents(true);
-    tick.loadURL('data:text/html,<body style="margin:0"><script>let i=0;(function f(){document.body.style.background=(i++%2)?"%23000":"%23fff";requestAnimationFrame(f)})()</script>');
+    tick.loadURL('data:text/html,' + encodeURIComponent('<body style="margin:0"><script>let i=0;(function f(){document.body.style.background=(i++%2)?"#000":"#fff";requestAnimationFrame(f)})()</script>'));
   }
   setInterval(() => refreshNetwork(false), 2500);
 });
 
 app.on('window-all-closed', () => {
   if (helper) helper.kill();
-  if (native) native.detach();
+  if (streamer) streamer.detach();
   app.quit();
 });

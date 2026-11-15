@@ -2,7 +2,7 @@
 <html lang="tr">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src ws://127.0.0.1:*; style-src 'self'; media-src 'self' mediastream:" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'" />
     <title>My Screen</title>
     <link rel="stylesheet" href="host.css" />
   </head>
@@ -15,29 +15,11 @@
     <main>
       <section class="connect">
         <h2>Telefonu bağla</h2>
-        <p class="hint">Telefonla QR kodu okut ya da adresi Chrome'a yaz. İkisi de aynı ekranı açar.</p>
+        <p class="hint">
+          Telefonla QR kodu okut (Samsung Internet önerilir). İlk açılışta "bağlantı gizli değil" uyarısı çıkar:
+          Gelişmiş → Yine de devam et. Sertifikayı bu bilgisayar üretti, bir kez onaylaman yeterli.
+        </p>
         <p class="hint" id="lastRequest">Telefondan henüz istek gelmedi.</p>
-
-        <div class="mode" id="modeBox" hidden>
-          <label class="check">
-            <input type="checkbox" id="nativeMode" />
-            Yerel mod (deneysel, 120 fps'e kadar)
-          </label>
-          <p class="hint" id="nativeHint" hidden>
-            QR kodlar yerel mod sayfasını açar. İlk açılışta telefon "bağlantı gizli değil" uyarısı verir:
-            Gelişmiş → Yine de devam et. Sorun olursa kutuyu kaldırıp normal modu kullan.
-          </p>
-          <label id="nativeRateBox" hidden>
-            Yerel mod kalitesi
-            <select id="nativeMbps">
-              <option value="15">15 Mbps</option>
-              <option value="30">30 Mbps</option>
-              <option value="45">45 Mbps</option>
-              <option value="60">60 Mbps</option>
-            </select>
-          </label>
-          <p class="stats" id="nativeStatus" hidden></p>
-        </div>
 
         <article class="card" id="card-hotspot">
           <div class="card-head">
@@ -66,38 +48,29 @@
 
       <section class="stream">
         <h2>Yayın</h2>
+        <p class="error" id="error" hidden></p>
         <label>
           Gönderilecek ekran
           <select id="display"></select>
         </label>
-        <div class="row">
-          <label>
-            Kare hızı
-            <select id="fps">
-              <option value="30">30 fps</option>
-              <option value="60">60 fps</option>
-              <option value="90">90 fps</option>
-              <option value="120">120 fps</option>
-            </select>
-          </label>
-          <label>
-            Kalite
-            <select id="bitrate">
-              <option value="5">Düşük (5 Mbps)</option>
-              <option value="12">Orta (12 Mbps)</option>
-              <option value="25">Yüksek (25 Mbps)</option>
-              <option value="45">En yüksek (45 Mbps)</option>
-            </select>
-          </label>
-        </div>
+        <label>
+          Kalite
+          <select id="mbps">
+            <option value="15">Düşük (15 Mbps)</option>
+            <option value="30">Orta (30 Mbps)</option>
+            <option value="45">Yüksek (45 Mbps)</option>
+            <option value="60">En yüksek (60 Mbps)</option>
+          </select>
+        </label>
         <label class="check">
           <input type="checkbox" id="input" />
           Telefondan dokunarak fareyi kontrol et
         </label>
-
-        <video id="preview" muted autoplay playsinline></video>
         <p id="stats" class="stats">Yayın bilgisi telefon bağlanınca görünür.</p>
-        <p id="error" class="error" hidden></p>
+        <p class="hint">
+          Kare hızı ekrandaki harekete göre değişir: ekran dururken kare gönderilmez, hızlı hareket ve
+          videolarda 120 fps'in üstüne çıkabilir.
+        </p>
       </section>
     </main>
 

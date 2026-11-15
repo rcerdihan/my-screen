@@ -1,14 +1,24 @@
-const video = document.getElementById('video');
+// Telefon sayfası: bilgisayarın ffmpeg ile kodladığı H.264 karelerini WebSocket'ten alır,
+// WebCodecs ile donanımda çözer ve tuvale çizer. Dokunuşları fare girdisi olarak geri gönderir.
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
 const overlay = document.getElementById('overlay');
 const message = document.getElementById('message');
 const startBtn = document.getElementById('start');
+const hud = document.getElementById('hud');
 
-const token = new URLSearchParams(location.search).get('t') || '';
+const params = new URLSearchParams(location.search);
+const token = params.get('t') || '';
+const showHud = params.has('hud');
 let ws = null;
-let pc = null;
+let decoder = null;
+let configuredCodec = '';
 let stopped = false;
 let started = false;
-let queue = Promise.resolve();
+let needKey = true;
+let frameSize = { width: 0, height: 0 };
+const counters = { received: 0, decoded: 0, dropped: 0, bytes: 0, decodeMs: 0 };
+const sentAt = new Map(); // timestamp -> çözücüye verilme zamanı
 
 function show(text, withButton) {
   overlay.hidden = false;
@@ -22,63 +32,123 @@ function wsSend(msg) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
-// ---------- bağlantı ----------
-function closePeer() {
-  if (pc) pc.close();
-  pc = null;
+if (!('VideoDecoder' in window)) {
+  stopped = true;
+  show(
+    window.isSecureContext
+      ? 'Bu tarayıcı görüntüyü çözemiyor (WebCodecs yok). Samsung Internet veya güncel bir Chrome kullan.'
+      : 'Sayfa güvenli bağlantıyla (https) açılmadı. Bilgisayardaki QR kodu yeniden okut.',
+    false
+  );
 }
 
-async function onMessage(msg) {
-  if (msg.type === 'offer') {
-    closePeer();
-    pc = new RTCPeerConnection({ iceServers: [] });
-    pc.ontrack = (e) => {
-      // En düşük gecikme: tampon bekletme.
-      try {
-        e.receiver.jitterBufferTarget = 0;
-        e.receiver.playoutDelayHint = 0;
-      } catch {}
-      video.srcObject = e.streams[0] || new MediaStream([e.track]);
-      video.play().catch(() => {});
-    };
-    pc.onicecandidate = (e) => {
-      if (e.candidate) wsSend({ type: 'candidate', candidate: e.candidate });
-    };
-    const current = pc;
-    pc.onconnectionstatechange = () => {
-      if (pc !== current) return;
-      if (pc.connectionState === 'connected') {
-        if (started) hide();
-        else show('Bağlandı. Tam ekran için dokun.', true);
-      } else if (pc.connectionState === 'failed') {
-        show('Görüntü bağlantısı kurulamadı. Bilgisayarda güvenlik duvarı iznini kontrol et.', false);
-      }
-    };
-    await pc.setRemoteDescription(msg.sdp);
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    wsSend({ type: 'answer', sdp: pc.localDescription });
-  } else if (msg.type === 'candidate' && pc) {
-    try {
-      await pc.addIceCandidate(msg.candidate);
-    } catch {}
-  } else if (msg.type === 'replaced') {
-    stopped = true;
-    closePeer();
-    show('Başka bir cihaz bağlandı. Yeniden bağlanmak için sayfayı yenile.', false);
+// SPS'ten codec dizesini çıkar: avc1.PPCCLL
+function codecFromAnnexB(data) {
+  for (let i = 0; i + 7 < data.length; i++) {
+    if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 1 && (data[i + 3] & 0x1f) === 7) {
+      const hex = (b) => b.toString(16).padStart(2, '0');
+      return `avc1.${hex(data[i + 4])}${hex(data[i + 5])}${hex(data[i + 6])}`;
+    }
   }
+  return '';
+}
+
+function drawFrame(frame) {
+  if (frame.displayWidth !== canvas.width || frame.displayHeight !== canvas.height) {
+    canvas.width = frame.displayWidth;
+    canvas.height = frame.displayHeight;
+    frameSize = { width: frame.displayWidth, height: frame.displayHeight };
+  }
+  ctx.drawImage(frame, 0, 0);
+}
+
+function createDecoder(codec) {
+  if (decoder && decoder.state !== 'closed') decoder.close();
+  decoder = new VideoDecoder({
+    output: (frame) => {
+      const t0 = sentAt.get(frame.timestamp);
+      if (t0 !== undefined) {
+        counters.decodeMs += performance.now() - t0;
+        sentAt.delete(frame.timestamp);
+      }
+      counters.decoded++;
+      // Çözücüde birikme varsa yalnızca en yeni kareyi çiz.
+      if (decoder.decodeQueueSize > 0) {
+        counters.dropped++;
+        frame.close();
+        return;
+      }
+      drawFrame(frame);
+      frame.close();
+    },
+    error: (err) => {
+      console.error(err);
+      needKey = true;
+      configuredCodec = '';
+      wsSend({ type: 'key' });
+    },
+  });
+  decoder.configure({ codec, optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' });
+  configuredCodec = codec;
+}
+
+let timestamp = 0;
+function onVideo(buf) {
+  const view = new Uint8Array(buf);
+  const key = view[0] === 1;
+  const data = view.subarray(9);
+  counters.received++;
+  counters.bytes += data.length;
+  if (needKey && !key) return;
+  if (key) {
+    const codec = codecFromAnnexB(data);
+    if (codec && (codec !== configuredCodec || !decoder || decoder.state === 'closed')) {
+      try {
+        createDecoder(codec);
+      } catch (err) {
+        show(`Çözücü açılamadı (${codec}): ${err.message}`, false);
+        return;
+      }
+    }
+  }
+  if (!decoder || decoder.state !== 'configured') return;
+  needKey = false;
+  // Çözücü yetişemiyorsa (aşırı birikme) sonraki anahtar kareye kadar atla.
+  if (decoder.decodeQueueSize > 30) {
+    needKey = true;
+    counters.dropped++;
+    wsSend({ type: 'key' });
+    return;
+  }
+  timestamp += 1000;
+  sentAt.set(timestamp, performance.now());
+  if (sentAt.size > 300) sentAt.clear();
+  decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp, data }));
 }
 
 function connect() {
   if (stopped) return;
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws?role=viewer&t=${encodeURIComponent(token)}`);
+  ws = new WebSocket(`wss://${location.host}/ws?t=${encodeURIComponent(token)}`);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    needKey = true;
+    show(started ? 'Görüntü bekleniyor…' : 'Bağlandı. Tam ekran için dokun.', !started);
+  };
   ws.onmessage = (e) => {
+    if (typeof e.data !== 'string') {
+      onVideo(e.data);
+      if (started && !overlay.hidden && counters.decoded > 0) hide();
+      return;
+    }
     const msg = JSON.parse(e.data);
-    queue = queue.then(() => onMessage(msg)).catch(() => {});
+    if (msg.type === 'replaced') {
+      stopped = true;
+      show('Başka bir cihaz bağlandı. Yeniden bağlanmak için sayfayı yenile.', false);
+    } else if (msg.type === 'error') {
+      show(msg.text, false);
+    }
   };
   ws.onclose = (e) => {
-    closePeer();
     if (e.code === 4001) {
       stopped = true;
       show('Bağlantı adresi geçersiz. Bilgisayardaki QR kodu yeniden okut.', false);
@@ -90,48 +160,6 @@ function connect() {
   };
 }
 
-// Alıcı tarafın ölçümlerini bilgisayara gönder (tanı için).
-let lastIn = null;
-setInterval(async () => {
-  if (!pc || pc.connectionState !== 'connected') return;
-  const report = await pc.getStats();
-  report.forEach((s) => {
-    if (s.type !== 'inbound-rtp' || s.kind !== 'video') return;
-    if (lastIn) {
-      const dt = (s.timestamp - lastIn.timestamp) / 1000;
-      const decoded = (s.framesDecoded - lastIn.framesDecoded) / dt;
-      const received = (s.framesReceived - lastIn.framesReceived) / dt;
-      const emitted = s.jitterBufferEmittedCount - lastIn.jitterBufferEmittedCount;
-      const bufferMs = emitted > 0 ? ((s.jitterBufferDelay - lastIn.jitterBufferDelay) / emitted) * 1000 : 0;
-      const decodeMs = decoded > 0 ? ((s.totalDecodeTime - lastIn.totalDecodeTime) / (s.framesDecoded - lastIn.framesDecoded)) * 1000 : 0;
-      wsSend({
-        type: 'stats',
-        line: [
-          `${s.frameWidth}x${s.frameHeight}`,
-          `alinan=${received.toFixed(0)}`,
-          `cozulen=${decoded.toFixed(0)}`,
-          `dusen=${s.framesDropped - lastIn.framesDropped}`,
-          `tamponMs=${bufferMs.toFixed(0)}`,
-          `cozmeMs=${decodeMs.toFixed(1)}`,
-          `cozucu=${s.decoderImplementation || '?'}`,
-          `donma=${s.freezeCount || 0}`,
-          `kayip=${s.packetsLost - lastIn.packetsLost}`,
-        ].join(' '),
-      });
-    }
-    lastIn = {
-      timestamp: s.timestamp,
-      framesDecoded: s.framesDecoded,
-      framesReceived: s.framesReceived,
-      framesDropped: s.framesDropped,
-      jitterBufferEmittedCount: s.jitterBufferEmittedCount,
-      jitterBufferDelay: s.jitterBufferDelay,
-      totalDecodeTime: s.totalDecodeTime,
-      packetsLost: s.packetsLost,
-    };
-  });
-}, 2000);
-
 startBtn.addEventListener('click', async () => {
   started = true;
   try {
@@ -140,151 +168,26 @@ startBtn.addEventListener('click', async () => {
   try {
     await screen.orientation.lock('landscape');
   } catch {}
-  video.play().catch(() => {});
-  hide();
+  if (counters.decoded > 0) hide();
+  else show('Görüntü bekleniyor…', false);
 });
 
-// ---------- dokunmatik -> fare ----------
-// Tek parmak: dokun = tık, sürükle = sürükle, basılı tut = sağ tık.
-// İki parmak: kaydırma.
-const MOVE_THRESHOLD = 10;
-const LONG_PRESS_MS = 550;
-let primaryId = null;
-let startX = 0;
-let startY = 0;
-let dragging = false;
-let consumed = false;
-let longPressTimer = null;
-let scrollLast = null;
-let pendingMove = null;
-
-function normalized(touch) {
-  const rect = video.getBoundingClientRect();
-  const vw = video.videoWidth || rect.width;
-  const vh = video.videoHeight || rect.height;
-  const scale = Math.min(rect.width / vw, rect.height / vh);
-  const w = vw * scale;
-  const h = vh * scale;
-  const left = rect.left + (rect.width - w) / 2;
-  const top = rect.top + (rect.height - h) / 2;
-  return {
-    x: Math.min(1, Math.max(0, (touch.clientX - left) / w)),
-    y: Math.min(1, Math.max(0, (touch.clientY - top) / h)),
-  };
-}
-function sendMove(touch) {
-  const p = normalized(touch);
-  wsSend({ type: 'input', k: 'm', x: p.x, y: p.y });
-}
-function queueMove(touch) {
-  const first = !pendingMove;
-  pendingMove = { clientX: touch.clientX, clientY: touch.clientY };
-  if (first) {
-    requestAnimationFrame(() => {
-      if (pendingMove) sendMove(pendingMove);
-      pendingMove = null;
-    });
+// Ölçümleri bilgisayara gönder.
+setInterval(() => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const line = `alinan=${counters.received} cozulen=${counters.decoded} atlanan=${counters.dropped} mbps=${((counters.bytes * 8) / 1e6).toFixed(1)} cozmeMs=${counters.decoded ? (counters.decodeMs / counters.decoded).toFixed(1) : '?'} kuyruk=${decoder ? decoder.decodeQueueSize : '?'} ${frameSize.width}x${frameSize.height} ${configuredCodec}`;
+  wsSend({ type: 'stats', line });
+  if (showHud) {
+    hud.hidden = false;
+    hud.textContent = `${counters.decoded} fps · ${((counters.bytes * 8) / 1e6).toFixed(0)} Mbps · çözme ${counters.decoded ? (counters.decodeMs / counters.decoded).toFixed(1) : '?'} ms`;
   }
-}
-function flushMove() {
-  if (pendingMove) sendMove(pendingMove);
-  pendingMove = null;
-}
-function clearLongPress() {
-  clearTimeout(longPressTimer);
-  longPressTimer = null;
-}
-function releaseDrag() {
-  if (dragging) wsSend({ type: 'input', k: 'u' });
-  dragging = false;
-}
-function centroid(touches) {
-  let x = 0;
-  let y = 0;
-  for (const t of touches) {
-    x += t.clientX;
-    y += t.clientY;
-  }
-  return { x: x / touches.length, y: y / touches.length };
-}
+  counters.received = counters.decoded = counters.dropped = counters.bytes = counters.decodeMs = 0;
+}, 1000);
 
-video.addEventListener(
-  'touchstart',
-  (e) => {
-    e.preventDefault();
-    if (e.touches.length === 1) {
-      const t = e.touches[0];
-      primaryId = t.identifier;
-      startX = t.clientX;
-      startY = t.clientY;
-      dragging = false;
-      consumed = false;
-      sendMove(t);
-      clearLongPress();
-      longPressTimer = setTimeout(() => {
-        if (!dragging && !consumed) {
-          consumed = true;
-          wsSend({ type: 'input', k: 'r' });
-          if (navigator.vibrate) navigator.vibrate(15);
-        }
-      }, LONG_PRESS_MS);
-    } else if (e.touches.length === 2) {
-      clearLongPress();
-      releaseDrag();
-      consumed = true;
-      scrollLast = centroid(e.touches);
-    }
-  },
-  { passive: false }
-);
-
-video.addEventListener(
-  'touchmove',
-  (e) => {
-    e.preventDefault();
-    if (e.touches.length >= 2 && scrollLast) {
-      const c = centroid(e.touches);
-      const dy = c.y - scrollLast.y;
-      const dx = c.x - scrollLast.x;
-      if (Math.abs(dy) >= 2) wsSend({ type: 'input', k: 'w', v: dy * 4 });
-      if (Math.abs(dx) >= 2) wsSend({ type: 'input', k: 'h', v: -dx * 4 });
-      scrollLast = c;
-      return;
-    }
-    if (consumed) return;
-    const t = [...e.touches].find((x) => x.identifier === primaryId);
-    if (!t) return;
-    if (!dragging) {
-      if (Math.hypot(t.clientX - startX, t.clientY - startY) < MOVE_THRESHOLD) return;
-      clearLongPress();
-      dragging = true;
-      wsSend({ type: 'input', k: 'd' });
-    }
-    queueMove(t);
-  },
-  { passive: false }
-);
-
-function onTouchEnd(e) {
-  e.preventDefault();
-  if (e.touches.length > 0) {
-    if (e.touches.length < 2) scrollLast = null;
-    return;
-  }
-  clearLongPress();
-  scrollLast = null;
-  flushMove();
-  if (dragging) {
-    releaseDrag();
-  } else if (!consumed && e.type === 'touchend') {
-    wsSend({ type: 'input', k: 'd' });
-    wsSend({ type: 'input', k: 'u' });
-  }
-  primaryId = null;
-}
-video.addEventListener('touchend', onTouchEnd, { passive: false });
-video.addEventListener('touchcancel', onTouchEnd, { passive: false });
+setupTouch(canvas, () => frameSize, wsSend);
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-if (!token) show('Bağlantı adresi eksik. Bilgisayardaki QR kodu okut.', false);
-else connect();
+if (!stopped) {
+  if (!token) show('Bağlantı adresi eksik. Bilgisayardaki QR kodu okut.', false);
+  else connect();
+}

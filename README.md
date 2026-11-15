@@ -1,10 +1,18 @@
 # My Screen
 
-Android telefonu Windows bilgisayarın ekranı olarak kullanır. Görüntü Wi-Fi etkin nokta veya USB kablo üzerinden, internete çıkmadan doğrudan telefona akar. Telefonda uygulama kurmak gerekmez; Chrome yeterlidir.
+Android telefonu Windows bilgisayarın ikinci ekranı olarak kullanır. Görüntü Wi-Fi etkin nokta veya USB kablo üzerinden, internete çıkmadan doğrudan telefona akar. Telefonda uygulama kurmak gerekmez; tarayıcı yeterlidir (Samsung Internet önerilir).
+
+Ekran ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalanır, NVIDIA NVENC (yoksa Intel Quick Sync) ile H.264'e kodlanır ve telefonda donanımla (WebCodecs) çözülür. Test ortamında 2340×1080'de 140+ fps ölçüldü.
+
+## Gereksinimler
+
+- Windows 10/11, Node.js
+- ffmpeg: `winget install Gyan.FFmpeg` (uygulama yolu kendisi bulur; başka bir yer için `MYSCREEN_FFMPEG` ortam değişkeni)
+- İkinci ekran için bir sanal ekran sürücüsü (aşağıda)
 
 ## Çalıştırma
 
-`start.bat` dosyasına çift tıkla (veya klasörde `npm start`).
+`start.bat` dosyasına çift tıkla (veya klasörde `npm install`, sonra `npm start`).
 
 İlk açılışta Windows Güvenlik Duvarı izin sorarsa **hem özel hem ortak ağlar** için izin ver; yoksa telefon bağlanamaz.
 
@@ -24,45 +32,44 @@ Windows, bilgisayarın kendisinde hiçbir bağlantı yokken etkin noktayı açma
 
 USB tethering açıkken bilgisayar telefonun internetini de kullanabilir. Mobil veri harcanmasın istiyorsan telefonda mobil veriyi kapat; ekran yayını bundan etkilenmez.
 
-Adres ve QR kod her açılışta aynıdır; telefonda sayfayı ana ekrana ekleyip sonraki sefer doğrudan açabilirsin.
+### Sertifika uyarısı
+Sayfa HTTPS ile açılır (telefon tarayıcısı görüntü çözmeyi yalnızca güvenli bağlantıda açar). Sertifikayı uygulama ilk açılışta bu bilgisayarda üretir, bu yüzden telefon bir kez "bağlantı gizli değil" uyarısı verir: **Gelişmiş → Yine de devam et**.
+
+Adres ve QR kod her açılışta aynıdır; sayfayı ana ekrana ekleyip sonraki sefer doğrudan açabilirsin. Eski `http://…:8787` kısayolları yeni adrese yönlendirilir.
 
 ## Telefonda kullanım
 
 - "Tam ekran başlat"a dokun; ekran yatay moda geçer.
 - Dokun: tık. Sürükle: sürükleme. Basılı tut: sağ tık. İki parmak: kaydırma.
 - Dokunmatik kontrolü PC'deki panelden kapatabilirsin.
+- Adrese `&hud` eklersen telefonda anlık fps ve çözme süresi görünür.
+
+Kare hızı ekrandaki harekete göre değişir: ekran dururken kare gönderilmez, hızlı hareket ve videolarda 120 fps'in üstüne çıkabilir.
 
 ## Gerçek ikinci ekran (masaüstünü genişletme)
 
-Uygulama, Windows'un gördüğü herhangi bir ekranı yayınlar. Sanal bir monitör yokken ana ekranı yansıtır. Telefonu ayrı bir monitör gibi kullanmak için bir sanal ekran sürücüsü gerekir:
+Sanal monitör yokken uygulama ana ekranı yansıtır. Telefonu ayrı bir monitör gibi kullanmak için:
 
-1. Açık kaynak **Virtual Display Driver** projesini (GitHub: `VirtualDrivers/Virtual-Display-Driver`) indirip kur. Sürücü kurulumu yönetici izni ister.
-2. Windows Ayarlar → Sistem → Ekran'da yeni monitör görünür; "Bu ekranları genişlet"i seç.
-3. My Screen'de "Gönderilecek ekran" listesinden sanal monitörü seç.
+1. **Virtual Display Driver**'ı kur: `winget install VirtualDrivers.Virtual-Display-Driver`, ardından "VDD Control" uygulamasında **Install**.
+2. Telefonun çözünürlüğünü `C:\VirtualDisplayDriver\vdd_settings.xml` içine ekle (ör. Galaxy A36 için 2340×1080), sürücüyü yeniden başlat (yönetici): `pnputil /restart-device "ROOT\DISPLAY\0000"`.
+3. `Win + P` → Genişlet; Ayarlar → Ekran'da sanal ekranı 2340×1080 @ 120 Hz yap.
+4. My Screen sanal ekranı kendiliğinden seçer.
 
-Sanal monitörün çözünürlüğünü telefonun en-boy oranına yakın ayarlarsan (ör. 2400×1080) görüntü ekranı tam doldurur.
-
-## Yerel mod (deneysel, 120 fps'e kadar)
-
-Normal mod ekranı Electron ile yakalar ve ~48 fps'te sınırlanır. Yerel mod ekranı ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalar, NVIDIA NVENC (yoksa Intel Quick Sync) ile kodlar ve telefonda WebCodecs ile çözer. Test ortamında 140+ fps ölçüldü.
-
-1. ffmpeg kurulu olmalı: `winget install Gyan.FFmpeg` (uygulama yolu kendisi bulur; farklı bir yer için `MYSCREEN_FFMPEG` ortam değişkeni).
-2. Paneldeki **Yerel mod** kutusunu işaretle; QR kodlar `https://…:8788/native.html` adresine döner.
-3. Telefonda ilk açılışta "bağlantı gizli değil" uyarısı çıkar (sertifika bu bilgisayarda üretildi): Gelişmiş → Yine de devam et.
-4. Sorun olursa kutuyu kaldır; normal mod hiç değişmeden çalışır.
-
-Adrese `&hud` eklersen telefonda anlık fps ve çözme süresi görünür.
+Pencereler varsayılan olarak ana ekranda açılır; `Win + Shift + →` ile telefona taşı. Ayarlar → Kişiselleştirme → Görev çubuğu → "Görev çubuğumu tüm ekranlarda göster" kullanışlıdır.
 
 ## Sorun giderme
 
 - **Telefon etkin noktada "internet yok" diyor:** Hyper-V/WSL/Docker ağı Windows'un internet paylaşımını kendine bağlamış olabilir. Etkin noktayı kapat, yönetici PowerShell'de `Restart-Service hns -Force` çalıştır, etkin noktayı yeniden aç.
 - **Sayfa telefonda açılmıyor (`ERR_TOO_MANY_RETRIES` vb.):** Başka bir tarayıcı dene (ör. Samsung Internet). Tarayıcı VPN'i, veri tasarrufu veya reklam engelleyici yerel adreslere erişimi kesebilir.
-- **Kare hızı 60'a çıkmıyor:** Yakalanan ekran 144 Hz ise yakalama en fazla 48 fps verir (144'ün üçte biri). Ekranı 60 Hz'e almak ya da 60 Hz'lik sanal ekranı yayınlamak 60 fps'e izin verir. Paneldeki yayın satırı ve `%APPDATA%\my-screen\stats.log` anlık kare hızını, kodlayıcıyı ve sınırlayan etkeni gösterir.
+- **Görüntü gelmiyor:** Paneldeki hata satırına bak (ffmpeg yok, ekran bulunamadı vb.). Ayrıntılar `%APPDATA%\my-screen\stats.log` dosyasında.
 - **İstek PC'ye ulaşıyor mu:** Paneldeki "Son istek" satırı ve `%APPDATA%\my-screen\requests.log` dosyası telefondan gelen her bağlantıyı gösterir.
+
+Eski (Electron/WebRTC, ~48 fps) sürüm git'te `webrtc-stabil` etiketiyle duruyor.
 
 ## Yapı
 
-- `src/main.js` — Electron ana süreç: HTTP/WebSocket sunucusu, ağ arayüzü algılama, QR, fare girdisi
-- `src/host/` — PC kontrol paneli; ekranı yakalar ve WebRTC ile gönderir
-- `src/client/` — telefonda açılan sayfa; görüntüyü oynatır, dokunuşları gönderir
+- `src/main.js` — Electron ana süreç: HTTPS/WebSocket sunucusu, sertifika, ağ arayüzü algılama, QR, fare girdisi
+- `src/native.js` — ffmpeg ile yakalama ve kodlama, kareleri telefona gönderme
+- `src/host/` — PC kontrol paneli
+- `src/client/` — telefonda açılan sayfa: kareleri çözer ve çizer, dokunuşları gönderir
 - `src/input-helper.ps1` — fareyi hareket ettiren yardımcı süreç

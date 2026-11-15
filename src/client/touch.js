@@ -1,4 +1,4 @@
-// Dokunmatik -> fare. Yerel mod sayfası kullanır (normal mod client.js içinde kendi kopyasını taşır).
+// Dokunmatik -> fare.
 // Tek parmak: dokun = tık, sürükle = sürükle, basılı tut = sağ tık. İki parmak: kaydırma.
 // el: dokunulan öğe, contentSize(): görüntünün piksel boyutu, send(msg): girdiyi gönder.
 function setupTouch(el, contentSize, send) {
