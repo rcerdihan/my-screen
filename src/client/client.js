@@ -160,8 +160,24 @@ function connect() {
   };
 }
 
+// Ekran kilidi: tuvale çizilen görüntü, video oynatımı gibi sayılmadığı için telefon kendi zaman
+// aşımında ekranı karartıyordu. Wake Lock ile sayfa açıkken ekran açık kalır. Sekme arka plana
+// geçince kilit düşer; öne gelince yeniden alınır.
+let wakeLock = null;
+async function keepScreenOn() {
+  if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  if (wakeLock && !wakeLock.released) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+  } catch {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') keepScreenOn();
+});
+
 startBtn.addEventListener('click', async () => {
   started = true;
+  keepScreenOn();
   try {
     await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
   } catch {}
@@ -185,6 +201,9 @@ setInterval(() => {
 }, 1000);
 
 setupTouch(canvas, () => frameSize, wsSend);
+// Bazı tarayıcılar kilidi yalnızca bir dokunuştan sonra verir; her dokunuşta kontrol et (zaten varsa bir şey yapmaz).
+canvas.addEventListener('touchend', keepScreenOn);
+keepScreenOn();
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 if (!stopped) {
