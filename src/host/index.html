@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src ws://127.0.0.1:*; style-src 'self'; media-src 'self' mediastream:" />
+    <title>My Screen</title>
+    <link rel="stylesheet" href="host.css" />
+  </head>
+  <body>
+    <header>
+      <h1>My Screen</h1>
+      <div id="status" class="status idle"><span class="dot"></span><span id="statusText">Telefon bekleniyor</span></div>
+    </header>
+
+    <main>
+      <section class="connect">
+        <h2>Telefonu bağla</h2>
+        <p class="hint">Telefonla QR kodu okut ya da adresi Chrome'a yaz. İkisi de aynı ekranı açar.</p>
+        <p class="hint" id="lastRequest">Telefondan henüz istek gelmedi.</p>
+
+        <article class="card" id="card-hotspot">
+          <div class="card-head">
+            <h3>Wi-Fi etkin nokta</h3>
+            <span class="badge" data-badge></span>
+          </div>
+          <div data-body></div>
+        </article>
+
+        <article class="card" id="card-usb">
+          <div class="card-head">
+            <h3>USB kablo</h3>
+            <span class="badge" data-badge></span>
+          </div>
+          <div data-body></div>
+        </article>
+
+        <article class="card" id="card-lan" hidden>
+          <div class="card-head">
+            <h3>Aynı ağ</h3>
+            <span class="badge" data-badge></span>
+          </div>
+          <div data-body></div>
+        </article>
+      </section>
+
+      <section class="stream">
+        <h2>Yayın</h2>
+        <label>
+          Gönderilecek ekran
+          <select id="display"></select>
+        </label>
+        <div class="row">
+          <label>
+            Kare hızı
+            <select id="fps">
+              <option value="30">30 fps</option>
+              <option value="60">60 fps</option>
+              <option value="90">90 fps</option>
+              <option value="120">120 fps</option>
+            </select>
+          </label>
+          <label>
+            Kalite
+            <select id="bitrate">
+              <option value="5">Düşük (5 Mbps)</option>
+              <option value="12">Orta (12 Mbps)</option>
+              <option value="25">Yüksek (25 Mbps)</option>
+              <option value="45">En yüksek (45 Mbps)</option>
+            </select>
+          </label>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="input" />
+          Telefondan dokunarak fareyi kontrol et
+        </label>
+
+        <video id="preview" muted autoplay playsinline></video>
+        <p id="stats" class="stats">Yayın bilgisi telefon bağlanınca görünür.</p>
+        <p id="error" class="error" hidden></p>
+      </section>
+    </main>
+
+    <script src="host.js"></script>
+  </body>
+</html>
