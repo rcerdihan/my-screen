@@ -306,6 +306,22 @@ function send(socket, msg) {
   if (socket && socket.readyState === 1) socket.send(JSON.stringify(msg));
 }
 
+function notifyViewer(ip) {
+  if (win) win.webContents.send('viewer', { connected: !!ip, ip: ip || '' });
+}
+
+// Panelden "Bağlantıyı kes": telefon kendiliğinden yeniden bağlanmaz, "Yeniden bağlan" düğmesi gösterir.
+function disconnectViewer() {
+  if (!viewerSocket) return;
+  const socket = viewerSocket;
+  viewerSocket = null;
+  streamer.detach(socket);
+  send(socket, { type: 'kicked' });
+  socket.close(4003, 'kicked');
+  logStats('telefon baglantisi panelden kesildi');
+  notifyViewer('');
+}
+
 function onViewer(socket, ip) {
   if (viewerSocket) {
     send(viewerSocket, { type: 'replaced' });
@@ -313,7 +329,9 @@ function onViewer(socket, ip) {
     streamer.detach(viewerSocket);
   }
   viewerSocket = socket;
+  socket.myScreenIp = ip;
   logStats(`telefon baglandi ${ip}`);
+  notifyViewer(ip);
   socket.on('message', (raw, isBinary) => {
     if (isBinary) return;
     let msg;
@@ -331,6 +349,7 @@ function onViewer(socket, ip) {
       viewerSocket = null;
       streamer.detach(socket);
       logStats('telefon ayrildi');
+      notifyViewer('');
     }
   });
   if (!streamer.available) {
@@ -465,6 +484,7 @@ app.whenReady().then(async () => {
       inputEnabled: config.inputEnabled,
       mbps: config.nativeMbps,
       manageVirtualDisplay: config.manageVirtualDisplay,
+      viewerIp: viewerSocket ? viewerSocket.myScreenIp : '',
       ffmpegAvailable: streamer.available,
       serverError,
       entries,
@@ -486,6 +506,7 @@ app.whenReady().then(async () => {
     saveConfig();
     streamer.setBitrate(config.nativeMbps);
   });
+  ipcMain.handle('disconnect-viewer', () => disconnectViewer());
   ipcMain.handle('set-manage-virtual-display', async (e, value) => {
     config.manageVirtualDisplay = !!value;
     saveConfig();

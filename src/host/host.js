@@ -101,6 +101,21 @@ api.onStreamStatus((info) => {
   }
 });
 
+// ---------- bağlı telefon ----------
+const disconnectBtn = $('disconnect');
+function showViewer(ip) {
+  disconnectBtn.hidden = !ip;
+  disconnectBtn.title = ip ? `${ip} adresindeki telefonun bağlantısını kes` : '';
+}
+api.onViewer(({ ip }) => showViewer(ip));
+disconnectBtn.onclick = async () => {
+  disconnectBtn.disabled = true;
+  await api.disconnectViewer();
+  disconnectBtn.disabled = false;
+  setStatus('idle', 'Bağlantı kesildi');
+  statsEl.textContent = 'Telefonda "Yeniden bağlan"a dokununca yayın yeniden başlar.';
+};
+
 // ---------- olaylar ----------
 displaySelect.onchange = () => api.selectDisplay(Number(displaySelect.value));
 mbpsSelect.onchange = () => api.setMbps(Number(mbpsSelect.value));
@@ -117,6 +132,7 @@ api.onDisplays(({ displays, selectedDisplayId }) => renderDisplays(displays, sel
   const state = await api.getState();
   inputCheck.checked = state.inputEnabled;
   $('manageVirtual').checked = state.manageVirtualDisplay;
+  showViewer(state.viewerIp);
   mbpsSelect.value = String(state.mbps || 30);
   renderDisplays(state.displays, state.selectedDisplayId);
   renderEntries(state.entries);

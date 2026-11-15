@@ -141,6 +141,23 @@ button {
 button:hover {
   filter: brightness(1.1);
 }
+button.danger {
+  background: transparent;
+  color: var(--bad);
+  border: 1px solid color-mix(in srgb, var(--bad) 60%, transparent);
+}
+button.danger:hover {
+  background: color-mix(in srgb, var(--bad) 15%, transparent);
+  filter: none;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+button[hidden] {
+  display: none;
+}
 label {
   display: block;
   color: var(--muted);

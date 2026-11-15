@@ -24,6 +24,8 @@ function show(text, withButton) {
   overlay.hidden = false;
   message.textContent = text;
   startBtn.hidden = !withButton;
+  const reconnect = document.getElementById('reconnect');
+  if (reconnect) reconnect.hidden = true;
 }
 function hide() {
   overlay.hidden = true;
@@ -142,8 +144,9 @@ function connect() {
     }
     const msg = JSON.parse(e.data);
     if (msg.type === 'replaced') {
-      stopped = true;
-      show('Başka bir cihaz bağlandı. Yeniden bağlanmak için sayfayı yenile.', false);
+      stopAndOfferReconnect('Başka bir cihaz bağlandı.');
+    } else if (msg.type === 'kicked') {
+      stopAndOfferReconnect('Bağlantı bilgisayardan kesildi.');
     } else if (msg.type === 'error') {
       show(msg.text, false);
     }
@@ -154,11 +157,33 @@ function connect() {
       show('Bağlantı adresi geçersiz. Bilgisayardaki QR kodu yeniden okut.', false);
       return;
     }
-    if (stopped || e.code === 4002) return;
+    if (e.code === 4002) return stopAndOfferReconnect('Başka bir cihaz bağlandı.');
+    if (e.code === 4003) return stopAndOfferReconnect('Bağlantı bilgisayardan kesildi.');
+    if (stopped) return;
     show('Bilgisayara bağlanılıyor…', false);
     setTimeout(connect, 1500);
   };
 }
+
+// Bilgisayar bağlantıyı kestiğinde (ya da başka cihaz bağlandığında) kendiliğinden yeniden bağlanma;
+// ekranın kararmasına izin ver ve kullanıcıya düğme göster.
+const reconnectBtn = document.getElementById('reconnect');
+function stopAndOfferReconnect(text) {
+  stopped = true;
+  if (wakeLock && !wakeLock.released) wakeLock.release().catch(() => {});
+  wakeLock = null;
+  show(text, false);
+  reconnectBtn.hidden = false;
+}
+reconnectBtn.addEventListener('click', () => {
+  reconnectBtn.hidden = true;
+  stopped = false;
+  needKey = true;
+  counters.decoded = 0;
+  keepScreenOn();
+  show('Bilgisayara bağlanılıyor…', false);
+  connect();
+});
 
 // Ekran kilidi: tuvale çizilen görüntü, video oynatımı gibi sayılmadığı için telefon kendi zaman
 // aşımında ekranı karartıyordu. Wake Lock ile sayfa açıkken ekran açık kalır. Sekme arka plana
