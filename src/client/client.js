@@ -143,7 +143,16 @@ function connect() {
       return;
     }
     const msg = JSON.parse(e.data);
-    if (msg.type === 'replaced') {
+    if (msg.type === 'hello') {
+      // Uygulama güncellendiyse (bilgisayar yeniden başladı, sayfa açık kaldı) yeni sayfayı yükle.
+      const known = sessionStorage.getItem('myscreen-build');
+      if (known && known !== msg.build) {
+        sessionStorage.setItem('myscreen-build', msg.build);
+        location.reload();
+        return;
+      }
+      sessionStorage.setItem('myscreen-build', msg.build);
+    } else if (msg.type === 'replaced') {
       stopAndOfferReconnect('Başka bir cihaz bağlandı.');
     } else if (msg.type === 'kicked') {
       stopAndOfferReconnect('Bağlantı bilgisayardan kesildi.');

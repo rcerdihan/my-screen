@@ -73,7 +73,9 @@ function nalTypes(au) {
 }
 
 // cache: önceki oturumlardan "genişlik x yükseklik" -> output_idx eşlemesi (yoklama ekran başına ~3 sn sürüyor).
-function createNativeStreamer({ log, onStatus, cache = {}, saveCache = () => {} }) {
+// onNeedFrame: ekran dururken Desktop Duplication yeni kare vermez; yayın başlarken ilk kare gelmezse
+// çağrılır ki ekranda küçük bir değişiklik yapılıp ilk kare tetiklensin.
+function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {}, saveCache = () => {} }) {
   const ffmpeg = findFfmpeg();
   const outputCache = new Map(Object.entries(cache));
   let proc = null;
@@ -204,6 +206,11 @@ function createNativeStreamer({ log, onStatus, cache = {}, saveCache = () => {} 
         scheduleRestart('ffmpeg durdu', 1500);
       }
     });
+    for (const delay of [500, 1500, 3000]) {
+      setTimeout(() => {
+        if (myGeneration === generation && socket && waitingKey) onNeedFrame();
+      }, delay);
+    }
     status('live', `${encoder.name} · ekran ${idx} · ${display.width}×${display.height}`);
     log(`yerel basladi kodlayici=${encoder.name} output_idx=${idx} ${display.width}x${display.height} ${mbps}Mbps`);
   }

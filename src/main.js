@@ -136,6 +136,28 @@ function detachVirtualDisplay() {
   }
 }
 
+// Seçili ekranın köşesinde bir anlığına 1 piksellik pencere açıp kapatır. Ekran hiç değişmiyorken
+// yakalama yeni kare üretmediği için telefon "Görüntü bekleniyor"da kalıyordu; bu ilk kareyi tetikler.
+function nudgeDisplay() {
+  const b = selectedDisplay().bounds;
+  const w = new BrowserWindow({
+    x: b.x,
+    y: b.y,
+    width: 1,
+    height: 1,
+    frame: false,
+    show: false,
+    skipTaskbar: true,
+    focusable: false,
+    resizable: false,
+    alwaysOnTop: true,
+    backgroundColor: '#000000',
+  });
+  w.setIgnoreMouseEvents(true);
+  w.showInactive();
+  setTimeout(() => w.destroy(), 150);
+}
+
 // ---------- fare girdisi (PowerShell yardımcı süreci) ----------
 function startHelper() {
   helper = spawn(
@@ -322,6 +344,14 @@ function disconnectViewer() {
   notifyViewer('');
 }
 
+// Telefon sayfasının sürümü: dosyalar değişince telefon açık kalan eski sayfayı kendiliğinden yeniler.
+let clientBuild = '';
+function computeClientBuild() {
+  const hash = crypto.createHash('sha1');
+  for (const name of fs.readdirSync(CLIENT_DIR).sort()) hash.update(name).update(fs.readFileSync(path.join(CLIENT_DIR, name)));
+  clientBuild = hash.digest('hex').slice(0, 12);
+}
+
 function onViewer(socket, ip) {
   if (viewerSocket) {
     send(viewerSocket, { type: 'replaced' });
@@ -332,6 +362,7 @@ function onViewer(socket, ip) {
   socket.myScreenIp = ip;
   logStats(`telefon baglandi ${ip}`);
   notifyViewer(ip);
+  send(socket, { type: 'hello', build: clientBuild });
   socket.on('message', (raw, isBinary) => {
     if (isBinary) return;
     let msg;
@@ -460,12 +491,14 @@ if (!app.requestSingleInstanceLock()) {
 app.whenReady().then(async () => {
   if (!app.hasSingleInstanceLock()) return;
   loadConfig();
+  computeClientBuild();
   if (config.manageVirtualDisplay) await attachVirtualDisplay();
   refreshTargetRect();
   lastDisplayKey = JSON.stringify(listDisplays());
   streamer = createNativeStreamer({
     log: logStats,
     onStatus: (info) => win && win.webContents.send('stream-status', info),
+    onNeedFrame: nudgeDisplay,
     cache: config.nativeOutputs || {},
     saveCache: (map) => {
       config.nativeOutputs = map;
