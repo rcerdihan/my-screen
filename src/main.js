@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { spawn, execFile } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 const selfsigned = require('selfsigned');
@@ -18,7 +18,15 @@ let win = null;
 let port = BASE_PORT;
 let securePort = 0; // telefon sayfası (HTTPS; telefonda WebCodecs güvenli bağlam ister)
 let serverError = '';
-let config = { token: '', selectedDisplayId: null, inputEnabled: true, nativeMbps: 30, nativeOutputs: {} };
+let config = {
+  token: '',
+  selectedDisplayId: null,
+  inputEnabled: true,
+  nativeMbps: 30,
+  nativeOutputs: {},
+  manageVirtualDisplay: true, // sanal ekranı uygulama açılınca bağla, kapanınca ayır
+  virtualMode: { width: 2340, height: 1080, hz: 120, x: -1, y: 0 }, // son kullanılan sanal ekran düzeni
+};
 let viewerSocket = null;
 let streamer = null;
 let targetRect = null; // seçili ekranın fiziksel piksel dikdörtgeni
@@ -89,6 +97,43 @@ function onDisplaysChanged() {
   streamer.warmup(selectedPixelSize());
   streamer.restart(selectedPixelSize());
   if (win) win.webContents.send('displays', { displays: listDisplays(), selectedDisplayId: selectedDisplay().id });
+}
+
+// ---------- sanal ekranı aç/kapat ----------
+const DISPLAY_HELPER = path.join(__dirname, 'display-helper.ps1');
+function displayHelperArgs(action, mode) {
+  const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', DISPLAY_HELPER, action];
+  if (mode) args.push(String(mode.width), String(mode.height), String(mode.hz || 0), String(mode.x ?? -1), String(mode.y || 0));
+  return args;
+}
+function parseHelper(out) {
+  try {
+    return JSON.parse(String(out).trim().split(/\r?\n/).pop());
+  } catch {
+    return { ok: false, error: String(out).slice(0, 200) };
+  }
+}
+function attachVirtualDisplay() {
+  return new Promise((resolve) => {
+    execFile('powershell.exe', displayHelperArgs('attach', config.virtualMode), { windowsHide: true, timeout: 20000 }, (err, stdout) => {
+      const result = err ? { ok: false, error: err.message } : parseHelper(stdout);
+      logStats(`sanal ekran baglama: ${JSON.stringify(result)}`);
+      resolve(result);
+    });
+  });
+}
+// Kapanışta çağrılır; uygulama kapanmadan bitmesi için eşzamanlı.
+function detachVirtualDisplay() {
+  try {
+    const result = parseHelper(execFileSync('powershell.exe', displayHelperArgs('detach'), { windowsHide: true, timeout: 20000 }));
+    if (result.width && result.height) {
+      config.virtualMode = { width: result.width, height: result.height, hz: result.hz, x: result.x, y: result.y };
+      saveConfig();
+    }
+    logStats(`sanal ekran ayirma: ${JSON.stringify(result)}`);
+  } catch (err) {
+    logStats(`sanal ekran ayirma hatasi: ${err.message}`);
+  }
 }
 
 // ---------- fare girdisi (PowerShell yardımcı süreci) ----------
@@ -382,6 +427,7 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   loadConfig();
+  if (config.manageVirtualDisplay) await attachVirtualDisplay();
   refreshTargetRect();
   lastDisplayKey = JSON.stringify(listDisplays());
   streamer = createNativeStreamer({
@@ -404,6 +450,7 @@ app.whenReady().then(async () => {
       selectedDisplayId: selectedDisplay().id,
       inputEnabled: config.inputEnabled,
       mbps: config.nativeMbps,
+      manageVirtualDisplay: config.manageVirtualDisplay,
       ffmpegAvailable: streamer.available,
       serverError,
       entries,
@@ -424,6 +471,11 @@ app.whenReady().then(async () => {
     config.nativeMbps = Math.max(5, Math.min(80, Number(value) || 30));
     saveConfig();
     streamer.setBitrate(config.nativeMbps);
+  });
+  ipcMain.handle('set-manage-virtual-display', async (e, value) => {
+    config.manageVirtualDisplay = !!value;
+    saveConfig();
+    if (config.manageVirtualDisplay) await attachVirtualDisplay();
   });
   ipcMain.handle('open-hotspot-settings', () => shell.openExternal('ms-settings:network-mobilehotspot'));
 
@@ -447,4 +499,8 @@ app.on('window-all-closed', () => {
   if (helper) helper.kill();
   if (streamer) streamer.detach();
   app.quit();
+});
+
+app.on('will-quit', () => {
+  if (config.manageVirtualDisplay) detachVirtualDisplay();
 });

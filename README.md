@@ -55,6 +55,8 @@ Sanal monitör yokken uygulama ana ekranı yansıtır. Telefonu ayrı bir monit�
 3. `Win + P` → Genişlet; Ayarlar → Ekran'da sanal ekranı 2340×1080 @ 120 Hz yap.
 4. My Screen sanal ekranı kendiliğinden seçer.
 
+My Screen açılınca sanal ekranı masaüstüne bağlar, kapanınca ayırır (son çözünürlük/hız/konum hatırlanır; yönetici izni gerekmez). Bunu paneldeki "Sanal ekranı uygulamayla birlikte aç ve kapat" kutusuyla kapatabilirsin. Uygulama çökerse ya da Görev Yöneticisi'nden sonlandırılırsa sanal ekran açık kalır; bir sonraki açılış/kapanışta düzelir, ya da `Win + P` → "Yalnızca bilgisayar ekranı".
+
 Pencereler varsayılan olarak ana ekranda açılır; `Win + Shift + →` ile telefona taşı. Ayarlar → Kişiselleştirme → Görev çubuğu → "Görev çubuğumu tüm ekranlarda göster" kullanışlıdır.
 
 ## Sorun giderme
@@ -73,3 +75,4 @@ Eski (Electron/WebRTC, ~48 fps) sürüm git'te `webrtc-stabil` etiketiyle duruyo
 - `src/host/` — PC kontrol paneli
 - `src/client/` — telefonda açılan sayfa: kareleri çözer ve çizer, dokunuşları gönderir
 - `src/input-helper.ps1` — fareyi hareket ettiren yardımcı süreç
+- `src/display-helper.ps1` — sanal ekranı masaüstüne bağlayan/ayıran yardımcı

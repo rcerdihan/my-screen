@@ -105,6 +105,7 @@ api.onStreamStatus((info) => {
 displaySelect.onchange = () => api.selectDisplay(Number(displaySelect.value));
 mbpsSelect.onchange = () => api.setMbps(Number(mbpsSelect.value));
 inputCheck.onchange = () => api.setInputEnabled(inputCheck.checked);
+$('manageVirtual').onchange = (e) => api.setManageVirtualDisplay(e.target.checked);
 
 api.onNetwork(renderEntries);
 api.onRequest((info) => {
@@ -115,6 +116,7 @@ api.onDisplays(({ displays, selectedDisplayId }) => renderDisplays(displays, sel
 (async () => {
   const state = await api.getState();
   inputCheck.checked = state.inputEnabled;
+  $('manageVirtual').checked = state.manageVirtualDisplay;
   mbpsSelect.value = String(state.mbps || 30);
   renderDisplays(state.displays, state.selectedDisplayId);
   renderEntries(state.entries);
