@@ -344,8 +344,9 @@ function handleInput(msg) {
       const nx = Math.min(1, Math.max(0, Number(msg.x)));
       const ny = Math.min(1, Math.max(0, Number(msg.y)));
       if (Number.isNaN(nx) || Number.isNaN(ny)) return;
-      const x = Math.round(targetRect.x + nx * (targetRect.width - 1));
-      const y = Math.round(targetRect.y + ny * (targetRect.height - 1));
+      // Kenarlarda 1 piksel pay: dokunuş ekranın en kenarına gelince imleç yan ekrana kaçmasın.
+      const x = Math.round(targetRect.x + 1 + nx * (targetRect.width - 3));
+      const y = Math.round(targetRect.y + 1 + ny * (targetRect.height - 3));
       sendHelper(`m ${x} ${y}`);
       break;
     }

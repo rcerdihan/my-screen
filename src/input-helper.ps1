@@ -34,8 +34,12 @@ public static class MyScreenInput {
   public static void MoveTo(int x, int y) {
     int vx = GetSystemMetrics(76), vy = GetSystemMetrics(77), vw = GetSystemMetrics(78), vh = GetSystemMetrics(79);
     if (vw < 2 || vh < 2) return;
-    int nx = (int)Math.Round((x - vx) * 65535.0 / (vw - 1));
-    int ny = (int)Math.Round((y - vy) * 65535.0 / (vh - 1));
+    // Windows mutlak değeri piksele "değer * genişlik / 65536" diye çevirir. Pikselin ortasını
+    // hedefle; eski yuvarlama ekranın en kenarında imleci 1 piksel yandaki ekrana taşıyabiliyordu.
+    int nx = (int)Math.Floor(((x - vx) + 0.5) * 65536.0 / vw);
+    int ny = (int)Math.Floor(((y - vy) + 0.5) * 65536.0 / vh);
+    nx = Math.Max(0, Math.Min(65535, nx));
+    ny = Math.Max(0, Math.Min(65535, ny));
     Send(MOVE | ABSOLUTE | VIRTUALDESK, nx, ny, 0);
   }
   public static void Down() { Send(LEFTDOWN, 0, 0, 0); }
