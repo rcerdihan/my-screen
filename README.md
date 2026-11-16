@@ -1,5 +1,7 @@
 # My Screen
 
+**İndir:** https://rcerdihan.github.io/my-screen/ · [Son sürüm](https://github.com/rcerdihan/my-screen/releases/latest)
+
 Android telefonu Windows bilgisayarın ikinci ekranı olarak kullanır. Görüntü Wi-Fi etkin nokta veya USB kablo üzerinden, internete çıkmadan doğrudan telefona akar. Telefonda uygulama kurmak gerekmez; tarayıcı yeterlidir (Samsung Internet önerilir).
 
 Ekran ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalanır, NVIDIA NVENC (yoksa Intel Quick Sync) ile H.264'e kodlanır ve telefonda donanımla (WebCodecs) çözülür. Gönderilen kare hızı sanal ekranın yenileme hızıyla sınırlanır (A36: 120, Tab S6: 60).
