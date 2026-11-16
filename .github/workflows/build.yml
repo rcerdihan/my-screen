@@ -53,9 +53,8 @@ jobs:
         run: |
           $v = '${{ steps.ver.outputs.version }}'
           Copy-Item "dist/MyScreen-Setup-$v.exe" dist/MyScreen-Setup.exe
-          Get-ChildItem dist -Filter 'MyScreen-Setup*.exe' | ForEach-Object {
-            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
-          } | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+          "$((Get-FileHash dist/MyScreen-Setup.exe -Algorithm SHA256).Hash.ToLower())  MyScreen-Setup.exe" |
+            Set-Content dist/SHA256SUMS.txt -Encoding ascii
           Get-Content dist/SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
@@ -77,4 +76,4 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --draft --title "My Screen ${{ steps.ver.outputs.version }}" --notes "Kurulum dosyası GitHub Actions'ta kaynak koddan üretildi ($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID). Code signing policy: https://rcerdihan.github.io/my-screen/code-signing.html"
           }
-          gh release upload $tag dist/MyScreen-Setup.exe "dist/MyScreen-Setup-${{ steps.ver.outputs.version }}.exe" dist/SHA256SUMS.txt --clobber
+          gh release upload $tag dist/MyScreen-Setup.exe dist/SHA256SUMS.txt --clobber
