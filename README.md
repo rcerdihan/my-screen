@@ -6,7 +6,25 @@ Ekran ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalanır, NVIDIA 
 
 İki ekran kartlı dizüstülerde sanal ekranı NVIDIA kartına ayarlamak (`vdd_settings.xml` → `<friendlyname>NVIDIA …</friendlyname>`) kareleri kopyalamadan kodlamayı sağlar; Intel kartta 2560×1600'de ~40 fps'te tıkanıyordu, NVIDIA'da sabit 60 fps ölçüldü.
 
-## Gereksinimler
+## Kurulum (paylaşmak için)
+
+`MyScreen-Setup-<sürüm>.exe` tek dosyadır: uygulamayı, ffmpeg'i (LGPL) ve Virtual Display Driver'ı (imzalı) içerir. Çalıştıran kişi bir kez yönetici onayı verir; kurulum:
+
+- uygulamayı Program Files'a kurar, Başlat menüsü ve masaüstü kısayolu ekler,
+- sanal ekran sürücüsünü kurar (bilgisayarda zaten bir Virtual Display Driver varsa dokunmaz),
+- `C:\VirtualDisplayDriver` ayar klasörünü hazırlar ve kullanıcılara yazma izni verir,
+- güvenlik duvarına uygulama için yalnızca yerel ağ adreslerinden gelen bağlantı izni ekler.
+
+Kaldırınca güvenlik duvarı kuralı silinir; sürücü yalnızca bu kurulum kurduysa kaldırılır. Kurulum günlüğü: `%ProgramData%\MyScreen\setup.log`.
+
+Kurulum dosyası imzasız olduğu için Windows "bilgisayarınızı korudu" uyarısı gösterir: **Ek bilgi → Yine de çalıştır**.
+
+### Kurulum dosyasını üretme
+1. `vendor\ffmpeg\` içine BtbN `ffmpeg-n9.0-latest-win64-lgpl-shared` arşivinin `bin\` içeriğini koy (ffplay/ffprobe gerekmez).
+2. `vendor\vdd\` içine Virtual Display Driver'ın `MttVDD.inf`, `MttVDD.dll`, `mttvdd.cat` ve `LICENSE.txt` dosyalarını koy.
+3. `npm install`, sonra `npm run dist` → `dist\MyScreen-Setup-<sürüm>.exe`.
+
+## Gereksinimler (geliştirme)
 
 - Windows 10/11, Node.js
 - ffmpeg: `winget install Gyan.FFmpeg` (uygulama yolu kendisi bulur; başka bir yer için `MYSCREEN_FFMPEG` ortam değişkeni)

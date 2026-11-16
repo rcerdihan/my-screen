@@ -5,7 +5,8 @@
   "main": "src/main.js",
   "private": true,
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64"
   },
   "dependencies": {
     "qrcode": "^1.5.4",
@@ -13,6 +14,71 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "electron": "^45.3.2"
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0"
+  },
+  "productName": "My Screen",
+  "author": "Regaip Cuma Erdihan",
+  "build": {
+    "appId": "com.myscreen.app",
+    "productName": "My Screen",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "src/*.ps1"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/ffmpeg",
+        "to": "ffmpeg"
+      },
+      {
+        "from": "vendor/vdd",
+        "to": "vdd"
+      },
+      {
+        "from": "installer/setup-driver.ps1",
+        "to": "setup/setup-driver.ps1"
+      },
+      {
+        "from": "installer/vdd_settings.xml",
+        "to": "setup/vdd_settings.xml"
+      },
+      {
+        "from": "THIRD_PARTY.md",
+        "to": "THIRD_PARTY.md"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "shortcutName": "My Screen",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "include": "installer/installer.nsh",
+      "artifactName": "MyScreen-Setup-${version}.${ext}"
+    }
   }
 }

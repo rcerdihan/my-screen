@@ -12,6 +12,8 @@ const selfsigned = require('selfsigned');
 const { createNativeStreamer } = require('./native');
 
 const CLIENT_DIR = path.join(__dirname, 'client');
+// PowerShell yardımcıları paketlenmiş uygulamada app.asar dışına (app.asar.unpacked) çıkarılıyor.
+const unpacked = (file) => path.join(__dirname, file).replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
 const BASE_PORT = 8787; // HTTP: yalnızca HTTPS sayfasına yönlendirir (eski kısayollar çalışsın diye)
 
 let win = null;
@@ -262,7 +264,7 @@ async function applySide(side) {
 }
 
 // ---------- sanal ekranı aç/kapat ----------
-const DISPLAY_HELPER = path.join(__dirname, 'display-helper.ps1');
+const DISPLAY_HELPER = unpacked('display-helper.ps1');
 function displayHelperArgs(action, mode) {
   const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', DISPLAY_HELPER, action];
   // Adlandırılmış parametre: konumsal verince PowerShell '-2560' gibi negatif sayıları parametre adı sanıyor.
@@ -325,7 +327,7 @@ function nudgeDisplay() {
 function startHelper() {
   helper = spawn(
     'powershell.exe',
-    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'input-helper.ps1')],
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', unpacked('input-helper.ps1')],
     { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true }
   );
   helper.on('exit', () => {
@@ -652,6 +654,9 @@ if (!app.requestSingleInstanceLock()) {
     win.focus();
   });
 }
+
+// Kurulu sürümde de ayarlar ve sertifika aynı klasörde kalsın (ürün adı "My Screen" olsa da).
+app.setPath('userData', path.join(app.getPath('appData'), 'my-screen'));
 
 app.whenReady().then(async () => {
   if (!app.hasSingleInstanceLock()) return;

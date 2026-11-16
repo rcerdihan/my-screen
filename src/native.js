@@ -41,6 +41,10 @@ function rate(mbps) {
 
 function findFfmpeg() {
   if (process.env.MYSCREEN_FFMPEG && fs.existsSync(process.env.MYSCREEN_FFMPEG)) return process.env.MYSCREEN_FFMPEG;
+  // Kurulumla gelen ffmpeg (resources/ffmpeg), geliştirmede vendor/ffmpeg.
+  for (const dir of [process.resourcesPath && path.join(process.resourcesPath, 'ffmpeg'), path.join(__dirname, '..', 'vendor', 'ffmpeg')]) {
+    if (dir && fs.existsSync(path.join(dir, 'ffmpeg.exe'))) return path.join(dir, 'ffmpeg.exe');
+  }
   const base = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WinGet', 'Packages');
   try {
     for (const pkg of fs.readdirSync(base).filter((n) => /^Gyan\.FFmpeg/i.test(n))) {
