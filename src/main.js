@@ -147,15 +147,15 @@ function reloadDriver() {
   });
 }
 
-async function applyDevice(id) {
-  const device = DEVICES.find((d) => d.id === id);
-  if (!device) return { ok: false, error: 'Bilinmeyen cihaz' };
-  const want = `${device.width}x${device.height}@${device.hz}`;
+// Sanal ekranı verilen moda (çözünürlük + yenileme) ayarla. Çözünürlük sürücüde yoksa eklenir ve
+// sürücü yeniden yüklenir (ekran ~6 sn kaybolup geri gelir).
+async function applyMode(mode) {
+  const want = `${mode.width}x${mode.height}@${mode.hz}`;
   let modes = await runDisplayHelper('modes');
   if (!modes.found) return { ok: false, error: 'Sanal ekran sürücüsü bulunamadı' };
   if (!(modes.modes || []).includes(want)) {
     try {
-      addResolutionToDriver(device.width, device.height);
+      addResolutionToDriver(mode.width, mode.height);
     } catch (err) {
       return { ok: false, error: `Sürücü ayar dosyası yazılamadı: ${err.message}` };
     }
@@ -169,13 +169,80 @@ async function applyDevice(id) {
     }
     if (!(modes.modes || []).includes(want)) return { ok: false, error: `${want} modu sürücüde görünmedi` };
   }
-  const result = await runDisplayHelper('set', { width: device.width, height: device.height, hz: device.hz, x: sideX(device.width), y: 0 });
-  logStats(`cihaz ${device.id} uygulandi: ${JSON.stringify(result)}`);
+  const result = await runDisplayHelper('set', { width: mode.width, height: mode.height, hz: mode.hz, x: sideX(mode.width), y: 0 });
   if (!result.ok) return { ok: false, error: `Ekran ayarı uygulanamadı (kod ${result.result})` };
-  config.device = device.id;
   config.virtualMode = { width: result.width, height: result.height, hz: result.hz, x: result.x, y: result.y };
   saveConfig();
   return { ok: true, mode: config.virtualMode };
+}
+
+async function applyDevice(id) {
+  if (id === 'auto') {
+    // Otomatik: bağlı cihaz varsa onun bildirdiği ekrana hemen uy, yoksa bağlanınca uyulur.
+    config.device = 'auto';
+    saveConfig();
+    if (lastDeviceInfo) return applyAuto(lastDeviceInfo);
+    return { ok: true, mode: config.virtualMode, pending: true };
+  }
+  const device = DEVICES.find((d) => d.id === id);
+  if (!device) return { ok: false, error: 'Bilinmeyen cihaz' };
+  const result = await applyMode(device);
+  logStats(`cihaz ${device.id} uygulandi: ${JSON.stringify(result)}`);
+  if (result.ok) {
+    config.device = device.id;
+    saveConfig();
+  }
+  return result;
+}
+
+// ---------- otomatik mod ----------
+// Bağlanan cihazın sayfası ekranının fiziksel çözünürlüğünü ve ölçtüğü yenileme hızını bildirir.
+const VDD_RATES = [60, 90, 120, 144, 165]; // sürücü ayarlarındaki genel yenileme hızları
+let lastDeviceInfo = null;
+function autoModeFrom(info) {
+  let w = Math.round(Number(info.width)) || 0;
+  let h = Math.round(Number(info.height)) || 0;
+  if (h > w) [w, h] = [h, w]; // yatay kullanım
+  // Mantıklı sınırlar; sürücü çift sayılı boyutları sever.
+  w = Math.min(3840, Math.max(800, w - (w % 2)));
+  h = Math.min(2400, Math.max(480, h - (h % 2)));
+  const measured = Number(info.hz) || 60;
+  const hz = VDD_RATES.reduce((best, r) => (Math.abs(r - measured) < Math.abs(best - measured) ? r : best), 60);
+  return { width: w, height: h, hz };
+}
+async function applyAuto(info) {
+  if (applyAuto.running) return applyAuto.running;
+  applyAuto.running = applyAutoNow(info).finally(() => (applyAuto.running = null));
+  return applyAuto.running;
+}
+// Android tarayıcıları "masaüstü sürümü" açıkken kendini Linux bilgisayar gibi tanıtır ve sayfaya
+// sahte bir ekran boyutu bildirir (Tab S6'da 2560x1600 yerine 2001x1200). Bu durumda ayar yapma.
+function isDesktopModeAndroid(info) {
+  return /X11; Linux/.test(info.ua || '') && !/Windows|Macintosh|CrOS/.test(info.ua || '');
+}
+async function applyAutoNow(info) {
+  if (isDesktopModeAndroid(info)) {
+    const result = { ok: false, error: 'Cihazın tarayıcısında "masaüstü sürümü" açık; ekran boyutunu doğru bildirmiyor. Tarayıcı menüsünden kapat.' };
+    logStats('otomatik mod: masaustu surumu acik, ayar yapilmadi');
+    if (win) win.webContents.send('auto-mode', { info, result });
+    return result;
+  }
+  const mode = autoModeFrom(info);
+  const cur = config.virtualMode || {};
+  const st = await runDisplayHelper('status');
+  if (st.attached && st.width === mode.width && st.height === mode.height && st.hz === mode.hz) return { ok: true, mode: cur };
+  logStats(`otomatik mod: cihaz ${info.width}x${info.height} ${info.hz}Hz -> sanal ekran ${mode.width}x${mode.height}@${mode.hz}`);
+  const result = await applyMode(mode);
+  logStats(`otomatik mod sonucu: ${JSON.stringify(result)}`);
+  if (win) win.webContents.send('auto-mode', { info, result });
+  return result;
+}
+async function onDeviceInfo(info) {
+  lastDeviceInfo = info;
+  logStats(`cihaz bildirdi ${JSON.stringify({ width: info.width, height: info.height, hz: info.hz, raw: info.raw, ua: info.ua })}`);
+  if (win) win.webContents.send('auto-mode', { info });
+  if (config.device !== 'auto') return;
+  await applyAuto(info);
 }
 
 // Sanal ekranın masaüstündeki yatay konumu: laptop ekranının sağı ya da solu (üst kenarlar hizalı).
@@ -470,6 +537,7 @@ function onViewer(socket, ip) {
     if (msg.type === 'input') handleInput(msg);
     else if (msg.type === 'stats') logStats(`telefon ${msg.line}`);
     else if (msg.type === 'key') streamer.requestKey();
+    else if (msg.type === 'device-info') onDeviceInfo(msg);
   });
   socket.on('close', () => {
     if (viewerSocket === socket) {

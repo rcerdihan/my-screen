@@ -75,6 +75,8 @@ Paneldeki **Cihaz** listesinden bağlayacağın cihazı seç; sanal ekran o ciha
 
 Çözünürlük sürücünün ayar dosyasında yoksa uygulama ekler ve sürücüyü yeniden yükletir (yönetici izni gerekmez); bu sırada sanal ekran birkaç saniye kaybolup geri gelir. Yeni cihaz eklemek için `src/main.js` içindeki `DEVICES` listesine bir satır eklemek yeterli.
 
+**Otomatik** seçeneğinde bağlanan cihazın sayfası ekranının çözünürlüğünü ve ölçtüğü yenileme hızını bildirir; sanal ekran buna göre ayarlanır (yeni bir çözünürlükte sürücü bir kez yeniden yüklenir). Tarayıcının "masaüstü sürümü" açıkken cihaz sahte bir ekran boyutu bildirdiği için otomatik ayar yapılmaz. Tarayıcının bildirdiği değer panelde görünür; cihazın gerçek panel çözünürlüğünden farklıysa elle profil seç.
+
 My Screen açılınca sanal ekranı masaüstüne bağlar, kapanınca ayırır (son çözünürlük/hız/konum hatırlanır; yönetici izni gerekmez). Bunu paneldeki "Sanal ekranı uygulamayla birlikte aç ve kapat" kutusuyla kapatabilirsin. Uygulama çökerse ya da Görev Yöneticisi'nden sonlandırılırsa sanal ekran açık kalır; bir sonraki açılış/kapanışta düzelir, ya da `Win + P` → "Yalnızca bilgisayar ekranı".
 
 Pencereler varsayılan olarak ana ekranda açılır; `Win + Shift + →` ile telefona taşı. Ayarlar → Kişiselleştirme → Görev çubuğu → "Görev çubuğumu tüm ekranlarda göster" kullanışlıdır.

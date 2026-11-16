@@ -122,6 +122,10 @@ const deviceStatus = $('deviceStatus');
 let currentDevice = '';
 function renderDevices(devices, selected) {
   deviceSelect.textContent = '';
+  const auto = document.createElement('option');
+  auto.value = 'auto';
+  auto.textContent = 'Otomatik — bağlanan cihazın ekranına göre';
+  deviceSelect.appendChild(auto);
   for (const d of devices) {
     const opt = document.createElement('option');
     opt.value = d.id;
@@ -140,12 +144,24 @@ deviceSelect.onchange = async () => {
   deviceSelect.disabled = false;
   if (result.ok) {
     currentDevice = id;
-    deviceStatus.textContent = `Sanal ekran ${result.mode.width}×${result.mode.height} @ ${result.mode.hz} Hz yapıldı.`;
+    deviceStatus.textContent = result.pending
+      ? 'Otomatik mod açık: cihaz bağlanınca sanal ekran onun ekranına göre ayarlanacak.'
+      : `Sanal ekran ${result.mode.width}×${result.mode.height} @ ${result.mode.hz} Hz yapıldı.`;
   } else {
     deviceSelect.value = currentDevice;
     deviceStatus.textContent = `Ayarlanamadı: ${result.error}`;
   }
 };
+
+// Otomatik modda cihazın bildirdiği ekran ve yapılan ayar.
+api.onAutoMode(({ info, result }) => {
+  if (deviceSelect.value !== 'auto') return;
+  deviceStatus.hidden = false;
+  const dev = `Bağlı cihaz: ${info.width}×${info.height}, ~${info.hz} Hz`;
+  if (!result) deviceStatus.textContent = `${dev}.`;
+  else if (result.ok) deviceStatus.textContent = `${dev} → sanal ekran ${result.mode.width}×${result.mode.height} @ ${result.mode.hz} Hz yapıldı.`;
+  else deviceStatus.textContent = `${dev} → ayarlanamadı: ${result.error}`;
+});
 
 // ---------- sanal ekranın konumu ----------
 const sideSelect = $('side');

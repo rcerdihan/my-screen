@@ -185,12 +185,52 @@ function onVideo(buf) {
   decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp, data }));
 }
 
+// Otomatik mod için ekranın fiziksel çözünürlüğünü ve yenileme hızını bilgisayara bildir.
+// Yenileme hızı ~1,5 sn boyunca ekran yenileme aralıklarının ortancasından ölçülür.
+let displayInfo = null;
+function measureDisplay() {
+  return new Promise((resolve) => {
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.round(screen.width * dpr);
+    const height = Math.round(screen.height * dpr);
+    const gaps = [];
+    let last = 0;
+    const t0 = performance.now();
+    const step = (now) => {
+      if (last) gaps.push(now - last);
+      last = now;
+      if (now - t0 < 1500) requestAnimationFrame(step);
+      else {
+        gaps.sort((a, b) => a - b);
+        const median = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 1000 / 60;
+        resolve({ width, height, hz: Math.round(1000 / median) });
+      }
+    };
+    requestAnimationFrame(step);
+  });
+}
+async function reportDisplay() {
+  if (!displayInfo) displayInfo = await measureDisplay();
+  if (/X11; Linux/.test(navigator.userAgent) && 'ontouchstart' in window) {
+    hud.hidden = false;
+    hud.textContent = 'Masaüstü sürümü açık: otomatik çözünürlük için tarayıcı menüsünden kapat.';
+    setTimeout(() => { if (!showHud) hud.hidden = true; }, 8000);
+  }
+  wsSend({
+    type: 'device-info',
+    ...displayInfo,
+    raw: { sw: screen.width, sh: screen.height, aw: screen.availWidth, ah: screen.availHeight, iw: innerWidth, ih: innerHeight, dpr: devicePixelRatio, o: (screen.orientation && screen.orientation.type) || '' },
+    ua: navigator.userAgent.slice(0, 120),
+  });
+}
+
 function connect() {
   if (stopped) return;
   ws = new WebSocket(`wss://${location.host}/ws?t=${encodeURIComponent(token)}`);
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => {
     needKey = true;
+    reportDisplay();
     show(started ? 'Görüntü bekleniyor…' : 'Bağlandı. Tam ekran için dokun.', !started);
   };
   ws.onmessage = (e) => {
