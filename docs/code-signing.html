@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Code signing policy · My Screen</title>
+    <meta name="description" content="My Screen code signing policy, team roles and privacy policy." />
+    <link rel="icon" href="favicon.ico" />
+    <style>
+      :root {
+        --bg: #0d1017;
+        --card: #161c2b;
+        --line: #252d41;
+        --text: #e9ecf3;
+        --muted: #9aa3b8;
+        --accent: #5b8cff;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f7fb;
+          --card: #ffffff;
+          --line: #dfe3ee;
+          --text: #141826;
+          --muted: #5b647a;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.65 'Segoe UI', system-ui, -apple-system, sans-serif;
+      }
+      main {
+        max-width: 780px;
+        margin: 0 auto;
+        padding: 28px 20px 60px;
+      }
+      a {
+        color: var(--accent);
+      }
+      .back {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        text-decoration: none;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .back img {
+        width: 24px;
+        height: 24px;
+      }
+      h1 {
+        font-size: 32px;
+        margin: 24px 0 6px;
+      }
+      h2 {
+        font-size: 20px;
+        margin: 32px 0 8px;
+      }
+      p,
+      li {
+        color: var(--muted);
+      }
+      strong {
+        color: var(--text);
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 18px 20px;
+        margin: 12px 0;
+      }
+      .status {
+        border-left: 4px solid var(--accent);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      td {
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      td:first-child {
+        width: 40%;
+        color: var(--text);
+        font-weight: 600;
+      }
+      code {
+        font: 14px ui-monospace, Consolas, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="back" href="./"><img src="icon-64.png" alt="" />My Screen</a>
+      <h1>Code signing policy</h1>
+      <p>Kod imzalama politikası · How My Screen release binaries are built and signed.</p>
+
+      <div class="card status">
+        <p>
+          <strong>Free code signing provided by <a href="https://signpath.io">SignPath.io</a>, certificate by
+          <a href="https://signpath.org">SignPath Foundation</a>.</strong>
+        </p>
+        <p>
+          <em>Durum / Status:</em> My Screen'in SignPath Foundation'a başvurusu hazırlık aşamasındadır. Onaylanana kadar
+          yayınlanan kurulum dosyaları imzasızdır. / The application to SignPath Foundation is in preparation; until
+          it is approved, released installers are unsigned.
+        </p>
+      </div>
+
+      <h2>Build and signing process</h2>
+      <ul>
+        <li>
+          Every installer is built from this repository's source by GitHub Actions
+          (<a href="https://github.com/rcerdihan/my-screen/blob/main/.github/workflows/build.yml"><code>.github/workflows/build.yml</code></a>).
+        </li>
+        <li>
+          Third-party files bundled in the installer are downloaded from their official releases with pinned versions and
+          SHA-256 checks
+          (<a href="https://github.com/rcerdihan/my-screen/blob/main/scripts/fetch-vendor.ps1"><code>scripts/fetch-vendor.ps1</code></a>):
+          FFmpeg (LGPL v3, BtbN builds) and Virtual Display Driver (MIT, already signed by SignPath Foundation). These
+          upstream binaries are included unsigned/as-is and are not signed with this project's certificate.
+        </li>
+        <li>Releases are created as drafts and every release is approved manually before publishing and signing.</li>
+        <li>All team members use multi-factor authentication for GitHub and SignPath.</li>
+      </ul>
+
+      <h2>Team roles</h2>
+      <div class="card">
+        <table>
+          <tr>
+            <td>Committers and reviewers</td>
+            <td><a href="https://github.com/rcerdihan">@rcerdihan</a> (repository owner)</td>
+          </tr>
+          <tr>
+            <td>Approvers</td>
+            <td><a href="https://github.com/rcerdihan">@rcerdihan</a> (repository owner)</td>
+          </tr>
+        </table>
+        <p>Changes from people outside the team (pull requests) are reviewed by a team member before merging.</p>
+      </div>
+
+      <h2>Privacy policy</h2>
+      <div class="card">
+        <p>
+          <strong>This program will not transfer any information to other networked systems unless specifically requested
+          by the user or the person installing or operating it.</strong>
+        </p>
+        <p>
+          My Screen streams the screen only to the phone or tablet that the user connects on their own local network
+          (Wi-Fi hotspot or USB tethering). The connection is encrypted (HTTPS/WSS with a certificate generated on the
+          user's computer) and accepted only from private network addresses with the secret key in the QR code. The app
+          makes no internet requests and contains no telemetry. Bundled components (FFmpeg, Virtual Display Driver) are
+          used locally and do not transfer data.
+        </p>
+        <p>
+          Bu program, kullanıcı ya da kurulumu yapan/çalıştıran kişi özellikle istemedikçe hiçbir bilgiyi başka ağ
+          sistemlerine göndermez. Ekran görüntüsü yalnızca kullanıcının kendi yerel ağında bağladığı cihaza gider.
+        </p>
+      </div>
+
+      <h2>System changes and uninstallation</h2>
+      <p>
+        The installer shows these changes before installing: it installs Virtual Display Driver (only if none is present),
+        creates <code>C:\VirtualDisplayDriver</code> with write access for users, and adds a Windows Firewall rule
+        allowing connections from local network addresses only. Uninstalling (Settings → Apps → My Screen) removes the
+        firewall rule and the driver, if the installer added it.
+      </p>
+
+      <p style="margin-top: 36px"><a href="./">← Ana sayfa</a> · <a href="https://github.com/rcerdihan/my-screen">GitHub</a></p>
+    </main>
+  </body>
+</html>

@@ -141,9 +141,10 @@ ffmpeg'i `vendor\ffmpeg\` klasöründe, kurulu bir Gyan.FFmpeg paketinde ya da `
 
 **Kurulum dosyasını üretme**
 
-1. `vendor\ffmpeg\` içine [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases) `ffmpeg-n9.0-latest-win64-lgpl-shared` arşivinin `bin\` içeriğini koy (ffplay/ffprobe gerekmez).
-2. `vendor\vdd\` içine Virtual Display Driver'ın `MttVDD.inf`, `MttVDD.dll`, `mttvdd.cat` ve `LICENSE.txt` dosyalarını koy.
-3. `npm run dist` → `dist\MyScreen-Setup-<sürüm>.exe`.
+1. `powershell -ExecutionPolicy Bypass -File scripts\fetch-vendor.ps1` → ffmpeg (LGPL) ve Virtual Display Driver'ı sabit sürüm ve SHA-256 kontrolüyle `vendor\` altına indirir.
+2. `npm run dist` → `dist\MyScreen-Setup-<sürüm>.exe`.
+
+GitHub'da her `v*` etiketi aynı adımları [Actions](.github/workflows/build.yml) üzerinde çalıştırır ve kurulumu taslak sürüme ekler; yayınlamak elle onaylanır.
 
 Kurulum (`installer/setup-driver.ps1`, yönetici olarak) sürücüyü kurar (bilgisayarda zaten bir Virtual Display Driver varsa dokunmaz), `C:\VirtualDisplayDriver` ayar klasörünü hazırlayıp kullanıcılara yazma izni verir ve güvenlik duvarına yalnızca yerel ağ adreslerinden izin ekler. Kaldırınca güvenlik duvarı kuralı silinir; sürücü yalnızca kurulum kurduysa kaldırılır.
 
@@ -161,6 +162,16 @@ Kurulum (`installer/setup-driver.ps1`, yönetici olarak) sürücüyü kurar (bil
 | `docs/` | İndirme sayfası (GitHub Pages) |
 
 Electron/WebRTC tabanlı ilk sürüm (~48 fps) `webrtc-stabil` etiketinde duruyor.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org) (başvuru hazırlık aşamasında; onaylanana kadar kurulum dosyaları imzasız).
+
+- Kurulum dosyaları GitHub Actions'ta bu repodaki kaynaktan üretilir ([build.yml](.github/workflows/build.yml)); üçüncü taraf dosyalar sabit sürüm ve SHA-256 kontrolüyle resmi kaynaklarından indirilir ([fetch-vendor.ps1](scripts/fetch-vendor.ps1)).
+- Committers and reviewers: [@rcerdihan](https://github.com/rcerdihan) · Approvers: [@rcerdihan](https://github.com/rcerdihan)
+- Privacy policy: This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+
+Ayrıntılar: [Code signing policy sayfası](https://rcerdihan.github.io/my-screen/code-signing.html).
 
 ## Üçüncü taraf bileşenler
 

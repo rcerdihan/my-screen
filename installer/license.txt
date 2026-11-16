@@ -1,0 +1,54 @@
+﻿MY SCREEN KURULUMU — BİLGİSAYARINDA YAPILACAK DEĞİŞİKLİKLER
+
+Devam etmeden önce lütfen oku. Kurulum, yönetici izniyle şu değişiklikleri yapar:
+
+1. Sanal ekran sürücüsü
+   Virtual Display Driver (açık kaynak, SignPath Foundation imzalı) kurulur ve Windows'a bir
+   sanal monitör eklenir. Bilgisayarında zaten bir Virtual Display Driver varsa ikinci bir tane
+   kurulmaz. Sanal monitör yalnızca My Screen açıkken masaüstüne bağlanır.
+
+2. Ayar klasörü
+   C:\VirtualDisplayDriver klasörü oluşturulur ve bilgisayarın kullanıcılarına bu klasöre yazma
+   izni verilir. My Screen, bağlanan cihazın çözünürlüğünü buradaki ayar dosyasına ekler ve
+   gerektiğinde sürücüye ayarları yeniden okutur.
+
+3. Güvenlik duvarı
+   Windows Güvenlik Duvarı'na "My Screen" adlı bir kural eklenir: uygulama yalnızca yerel ağ
+   adreslerinden (10.x, 172.16-31.x, 192.168.x, yerel alt ağ) gelen bağlantıları kabul eder.
+
+4. Uygulama ve kısayollar
+   Uygulama Program Files klasörüne kurulur; Başlat menüsü ve masaüstü kısayolu eklenir.
+
+Gizlilik: My Screen hiçbir bilgiyi internete göndermez. Ekran görüntüsü yalnızca senin
+bağladığın cihaza, yerel ağ üzerinden şifreli olarak gider.
+
+Kaldırma: Ayarlar → Uygulamalar → My Screen → Kaldır. Güvenlik duvarı kuralı silinir; sanal
+ekran sürücüsü, bu kurulum kurduysa kaldırılır. Kurulum günlüğü:
+%ProgramData%\MyScreen\setup.log
+
+----------------------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 Regaip Cuma Erdihan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Kurulum ayrıca FFmpeg (GNU LGPL v3) ve Virtual Display Driver (MIT) içerir; ayrıntılar
+kurulum klasöründeki resources\THIRD_PARTY.md dosyasında.

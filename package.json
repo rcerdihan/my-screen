@@ -52,6 +52,10 @@
       {
         "from": "THIRD_PARTY.md",
         "to": "THIRD_PARTY.md"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.txt"
       }
     ],
     "win": {
@@ -77,7 +81,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "include": "installer/installer.nsh",
-      "artifactName": "MyScreen-Setup-${version}.${ext}"
+      "artifactName": "MyScreen-Setup-${version}.${ext}",
+      "license": "installer/license.txt"
     }
   },
   "license": "MIT",
