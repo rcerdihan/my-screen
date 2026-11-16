@@ -169,11 +169,21 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
   let probing = null;
   // Önbellekteki değer: { adapter, output, vendor }. Eski sürümden kalan sayı değerler geçersiz sayılır.
   const valid = (v) => v && typeof v === 'object' && Number.isInteger(v.adapter) && Number.isInteger(v.output);
+  // Electron'un boyutu (DIP × ölçek) yuvarlamadan dolayı gerçek boyuttan 1-2 px sapabiliyor
+  // (ör. %175 ölçekte 2664 yerine 2665). Tam eşleşme yoksa en fazla 3 px farklı olanı kabul et.
+  function lookup(size) {
+    const exact = outputCache.get(`${size.width}x${size.height}`);
+    if (valid(exact)) return exact;
+    for (const [k, v] of outputCache) {
+      const [w, h] = k.split('x').map(Number);
+      if (valid(v) && Math.abs(w - size.width) <= 3 && Math.abs(h - size.height) <= 3) return v;
+    }
+    return null;
+  }
   async function findOutput(size = display) {
-    const key = `${size.width}x${size.height}`;
-    if (valid(outputCache.get(key))) return outputCache.get(key);
+    if (lookup(size)) return lookup(size);
     if (probing) await probing; // aynı anda iki yoklama yapma
-    if (valid(outputCache.get(key))) return outputCache.get(key);
+    if (lookup(size)) return lookup(size);
     let resolveProbe;
     probing = new Promise((r) => (resolveProbe = r));
     try {
@@ -188,7 +198,7 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
           if (seen.has(`${info.id}/${k}`)) continue; // aynı kart iki kez listelenebiliyor
           seen.add(`${info.id}/${k}`);
           if (!valid(outputCache.get(k))) outputCache.set(k, { adapter, output, vendor: info.vendor });
-          if (k === key) break outer;
+          if (lookup(size)) break outer;
         }
       }
       saveCache(Object.fromEntries([...outputCache].filter(([, v]) => valid(v))));
@@ -196,7 +206,7 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
       probing = null;
       resolveProbe();
     }
-    return valid(outputCache.get(key)) ? outputCache.get(key) : null;
+    return lookup(size);
   }
 
   function sendFrame(au) {
