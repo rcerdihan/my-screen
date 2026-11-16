@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>My Screen</title>
+    <meta name="description" content="Android telefonunu veya tabletini Windows bilgisayarının ikinci ekranı yap. Uygulama kurmadan, tarayıcıdan, 120 fps'e kadar." />
+    <link rel="icon" href="favicon.ico" />
+    <style>
+      :root {
+        --bg: #0d1017;
+        --bg2: #131826;
+        --card: #161c2b;
+        --line: #252d41;
+        --text: #e9ecf3;
+        --muted: #9aa3b8;
+        --accent: #5b8cff;
+        --accent2: #8f6bff;
+        --ok: #3ecf8e;
+        --radius: 14px;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f7fb;
+          --bg2: #eef1f8;
+          --card: #ffffff;
+          --line: #dfe3ee;
+          --text: #141826;
+          --muted: #5b647a;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.6 'Segoe UI', system-ui, -apple-system, sans-serif;
+      }
+      a {
+        color: var(--accent);
+      }
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+      header.top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 700;
+        font-size: 18px;
+        color: var(--text);
+        text-decoration: none;
+      }
+      .brand img {
+        width: 32px;
+        height: 32px;
+      }
+      nav a {
+        color: var(--muted);
+        text-decoration: none;
+        margin-left: 20px;
+        font-size: 15px;
+      }
+      nav a:hover {
+        color: var(--text);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 40px;
+        align-items: center;
+        padding: 48px 0 64px;
+      }
+      h1 {
+        font-size: clamp(32px, 5vw, 52px);
+        line-height: 1.1;
+        margin: 0 0 18px;
+        letter-spacing: -0.02em;
+      }
+      h1 .grad {
+        background: linear-gradient(90deg, var(--accent), var(--accent2));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .lead {
+        color: var(--muted);
+        font-size: 18px;
+        margin: 0 0 28px;
+        max-width: 34em;
+      }
+      .cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 22px;
+        border-radius: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        border: 1px solid var(--line);
+        color: var(--text);
+        background: var(--card);
+      }
+      .btn.primary {
+        border: 0;
+        color: #fff;
+        background: linear-gradient(90deg, var(--accent), var(--accent2));
+        box-shadow: 0 8px 30px -10px var(--accent);
+      }
+      .btn.primary:hover {
+        filter: brightness(1.08);
+      }
+      .btn svg {
+        width: 20px;
+        height: 20px;
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 12px;
+      }
+
+      .devices {
+        width: 100%;
+        height: auto;
+      }
+      .devices .screen-glow {
+        animation: glow 3s ease-in-out infinite;
+      }
+      @keyframes glow {
+        50% {
+          opacity: 0.55;
+        }
+      }
+
+      section {
+        padding: 56px 0;
+      }
+      section.alt {
+        background: var(--bg2);
+      }
+      h2 {
+        font-size: 28px;
+        margin: 0 0 8px;
+        letter-spacing: -0.01em;
+      }
+      .sub {
+        color: var(--muted);
+        margin: 0 0 32px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 22px;
+      }
+      .card h3 {
+        margin: 10px 0 6px;
+        font-size: 17px;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: color-mix(in srgb, var(--accent) 18%, transparent);
+        color: var(--accent);
+      }
+      .icon svg {
+        width: 22px;
+        height: 22px;
+      }
+
+      ol.steps {
+        list-style: none;
+        counter-reset: s;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 14px;
+      }
+      ol.steps li {
+        counter-increment: s;
+        display: grid;
+        grid-template-columns: 44px 1fr;
+        gap: 14px;
+        align-items: start;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 18px 20px;
+      }
+      ol.steps li::before {
+        content: counter(s);
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        color: #fff;
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+      }
+      ol.steps b {
+        display: block;
+        margin-bottom: 2px;
+      }
+      ol.steps span {
+        color: var(--muted);
+        font-size: 15px;
+      }
+      kbd {
+        font: 13px ui-monospace, Consolas, monospace;
+        background: var(--bg2);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 1px 6px;
+      }
+
+      .two {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      ul.check {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      ul.check li {
+        padding: 6px 0 6px 28px;
+        position: relative;
+        color: var(--muted);
+      }
+      ul.check li::before {
+        content: '';
+        position: absolute;
+        left: 4px;
+        top: 13px;
+        width: 12px;
+        height: 7px;
+        border-left: 2px solid var(--ok);
+        border-bottom: 2px solid var(--ok);
+        transform: rotate(-45deg);
+      }
+      ul.check li.no::before {
+        border: 0;
+        content: '–';
+        color: var(--muted);
+        top: 5px;
+        left: 6px;
+        transform: none;
+      }
+      ul.check strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      details {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px 20px;
+        margin-bottom: 10px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      details p {
+        color: var(--muted);
+        margin: 10px 0 0;
+      }
+
+      .final {
+        text-align: center;
+      }
+      .final .cta {
+        justify-content: center;
+      }
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 28px 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      footer .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      @media (max-width: 820px) {
+        .hero {
+          grid-template-columns: 1fr;
+          padding-top: 24px;
+        }
+        .grid,
+        .two {
+          grid-template-columns: 1fr;
+        }
+        nav {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <a class="brand" href="#"><img src="icon-64.png" alt="" />My Screen</a>
+        <nav>
+          <a href="#ozellikler">Özellikler</a>
+          <a href="#kurulum">Kurulum</a>
+          <a href="#sss">SSS</a>
+          <a href="https://github.com/rcerdihan/my-screen">GitHub</a>
+        </nav>
+      </header>
+
+      <div class="hero">
+        <div>
+          <h1>Telefonun ya da tabletin <span class="grad">ikinci ekranın</span> olsun.</h1>
+          <p class="lead">
+            My Screen, Android cihazını Windows bilgisayarının gerçek bir ikinci monitörüne çevirir. Cihaza uygulama
+            kurmazsın: QR kodu okut, tarayıcıda aç, pencereleri sürükle. Görüntü internete çıkmadan, doğrudan Wi-Fi ya
+            da USB üzerinden akar.
+          </p>
+          <div class="cta">
+            <a class="btn primary" href="https://github.com/rcerdihan/my-screen/releases/latest/download/MyScreen-Setup.exe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+              Windows için indir
+            </a>
+            <a class="btn" href="https://github.com/rcerdihan/my-screen">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.7.1-.7 1.2.1 1.9 1.3 1.9 1.3 1.1 1.8 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.3-3.2-.1-.3-.6-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.7 1.7.2 2.9.1 3.2.8.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5Z" /></svg>
+              Kaynak kod
+            </a>
+          </div>
+          <p class="meta">Windows 10/11 · 64 bit · ücretsiz ve açık kaynak · tek kurulum dosyası (~165 MB)</p>
+        </div>
+
+        <svg class="devices" viewBox="0 0 520 340" role="img" aria-label="Laptop ve yanında ikinci ekran olarak tablet">
+          <defs>
+            <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#5b8cff" />
+              <stop offset="1" stop-color="#8f6bff" />
+            </linearGradient>
+          </defs>
+          <!-- tablet -->
+          <rect x="16" y="70" width="230" height="160" rx="16" fill="#1d2433" stroke="#2e3850" stroke-width="2" />
+          <rect x="28" y="82" width="206" height="136" rx="6" fill="url(#g)" class="screen-glow" />
+          <rect x="44" y="100" width="110" height="70" rx="6" fill="#ffffff" opacity="0.92" />
+          <rect x="52" y="110" width="70" height="6" rx="3" fill="#5b8cff" />
+          <rect x="52" y="124" width="92" height="5" rx="2.5" fill="#c9d3ec" />
+          <rect x="52" y="135" width="80" height="5" rx="2.5" fill="#c9d3ec" />
+          <rect x="166" y="100" width="54" height="104" rx="6" fill="#ffffff" opacity="0.25" />
+          <path d="M60 196c18-16 30 6 46-8s28 4 40-6" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" />
+          <!-- bağlantı -->
+          <path d="M252 150h40" stroke="url(#g)" stroke-width="3" stroke-dasharray="6 6" stroke-linecap="round">
+            <animate attributeName="stroke-dashoffset" from="24" to="0" dur="1s" repeatCount="indefinite" />
+          </path>
+          <!-- laptop -->
+          <rect x="298" y="60" width="206" height="140" rx="10" fill="#1d2433" stroke="#2e3850" stroke-width="2" />
+          <rect x="308" y="70" width="186" height="120" rx="4" fill="#0f1422" />
+          <rect x="320" y="84" width="96" height="62" rx="5" fill="#2a3450" />
+          <rect x="328" y="94" width="58" height="5" rx="2.5" fill="#5b8cff" />
+          <rect x="328" y="106" width="78" height="4" rx="2" fill="#46527a" />
+          <rect x="328" y="116" width="66" height="4" rx="2" fill="#46527a" />
+          <path d="M282 200h236l-14 18H296z" fill="#2a3349" />
+          <rect x="384" y="204" width="34" height="4" rx="2" fill="#3a4562" />
+        </svg>
+      </div>
+    </div>
+
+    <section class="alt" id="ozellikler">
+      <div class="wrap">
+        <h2>Neden My Screen?</h2>
+        <p class="sub">Basit kurulum, akıcı görüntü, dokunmatik kontrol.</p>
+        <div class="grid">
+          <div class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg></div>
+            <h3>Gerçek ikinci monitör</h3>
+            <p>Windows cihazı ayrı bir ekran olarak görür; masaüstünü genişletir, pencereleri üzerine taşırsın. Uygulama kapanınca sanal ekran da kaybolur.</p>
+          </div>
+          <div class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z" /></svg></div>
+            <h3>120 fps'e kadar</h3>
+            <p>Ekran kopyalanmadan ekran kartında (NVIDIA NVENC / Intel Quick Sync) kodlanır, cihazda donanımla çözülür. Cihazın yenileme hızında akar.</p>
+          </div>
+          <div class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h3M20 7V4h-3M4 17v3h3M20 17v3h-3" /><rect x="8" y="8" width="8" height="8" rx="1" /></svg></div>
+            <h3>Uygulama gerekmez</h3>
+            <p>Telefonda ya da tablette tarayıcı yeterli. QR kodu okut, sayfayı ana ekrana ekle; sonraki sefer tek dokunuş.</p>
+          </div>
+          <div class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V6a3 3 0 0 1 6 0v5" /><path d="M6 11h12l-1 9H7z" /></svg></div>
+            <h3>Dokun, çiz, yaz</h3>
+            <p>Dokunuşlar fareye dönüşür: dokun = tık, sürükle, basılı tut = sağ tık, iki parmak = kaydırma. Paint'te el yazısı akıcı çıkar.</p>
+          </div>
+          <div class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /><circle cx="12" cy="12" r="4" /></svg></div>
+            <h3>Otomatik ayar</h3>
+            <p>Bağlanan cihazın çözünürlüğünü ve yenileme hızını algılar, sanal ekranı ona göre ayarlar. Telefon, tablet fark etmez.</p>
+          </div>
+          <div class="card">
+            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg></div>
+            <h3>Yalnızca senin ağında</h3>
+            <p>Görüntü internete çıkmaz; bağlantı şifreli ve yalnızca yerel ağ adreslerinden, QR koddaki gizli anahtarla kabul edilir.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="kurulum">
+      <div class="wrap">
+        <h2>Üç dakikada kurulum</h2>
+        <p class="sub">Tek dosya: uygulama, ekran yakalama ve sanal ekran sürücüsü birlikte gelir.</p>
+        <ol class="steps">
+          <li><div><b>İndir ve kur</b><span>Kurulumu çalıştır. Windows "bilgisayarınızı korudu" derse <kbd>Ek bilgi</kbd> → <kbd>Yine de çalıştır</kbd>, sonra yönetici onayı ver.</span></div></li>
+          <li><div><b>Cihazı bağla</b><span>Telefonu bilgisayarın <b style="display:inline">mobil etkin noktasına</b> bağla ya da USB kabloyla takıp <b style="display:inline">USB tethering</b>'i aç.</span></div></li>
+          <li><div><b>QR kodu okut</b><span>My Screen penceresindeki QR kodu tarayıcıyla aç. İlk seferde "bağlantı gizli değil" uyarısında <kbd>Gelişmiş</kbd> → <kbd>Yine de devam et</kbd>.</span></div></li>
+          <li><div><b>Tam ekran başlat</b><span>Dokun, ikinci ekran hazır. Pencereleri laptop ekranının kenarından cihaza sürükle.</span></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="alt">
+      <div class="wrap two">
+        <div class="card">
+          <h3>Gereksinimler</h3>
+          <ul class="check">
+            <li><strong>Windows 10 veya 11</strong>, 64 bit</li>
+            <li><strong>NVIDIA veya Intel</strong> ekran kartı (donanım kodlama için)</li>
+            <li><strong>Android</strong> telefon ya da tablet; Samsung Internet veya güncel Chrome</li>
+            <li>Bilgisayarda mobil etkin nokta ya da USB tethering</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Bilinen sınırlar</h3>
+          <ul class="check">
+            <li class="no">AMD ekran kartları henüz desteklenmiyor</li>
+            <li class="no">iPhone/iPad denenmedi; Safari'de bağlantı sorunları olabilir</li>
+            <li class="no">Kalem basıncı yok; dokunuşlar fare olarak gider</li>
+            <li class="no">Laptop pildeyken Windows kare hızını yarıya düşürebilir</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="sss">
+      <div class="wrap">
+        <h2>Sık sorulanlar</h2>
+        <p class="sub">&nbsp;</p>
+        <details>
+          <summary>Windows neden "bilgisayarınızı korudu" uyarısı gösteriyor?</summary>
+          <p>Kurulum dosyası dijital olarak imzalı değil. Dosyanın kaynağı bu sayfa ve GitHub'daki açık kaynak kodu; uyarıyı Ek bilgi → Yine de çalıştır ile geçebilirsin.</p>
+        </details>
+        <details>
+          <summary>Cihazda "bağlantı gizli değil" uyarısı neden çıkıyor?</summary>
+          <p>Tarayıcılar görüntüyü donanımla çözmeyi yalnızca güvenli (HTTPS) bağlantıda açıyor. My Screen ilk açılışta bilgisayarında kendine ait bir sertifika üretir; tarayıcı onu tanımadığı için bir kez onay ister.</p>
+        </details>
+        <details>
+          <summary>Etkin noktaya bağlanınca "internet yok" diyor, sorun mu?</summary>
+          <p>Görüntü için internet gerekmez. Yine de internet istiyorsan USB tethering kullan ya da bilgisayarda Hyper-V/WSL varsa etkin noktayı kapatıp yönetici PowerShell'de <kbd>Restart-Service hns -Force</kbd> çalıştırıp yeniden aç.</p>
+        </details>
+        <details>
+          <summary>Kare hızı düşük, ne yapabilirim?</summary>
+          <p>Laptopu prize tak (pilde Windows ve tarayıcılar kare hızını sınırlıyor). İki ekran kartlı dizüstülerde videoyu oynatan tarayıcıyı Windows Ayarlar → Ekran → Grafik bölümünden "Yüksek performans" karta almak da yardımcı olur.</p>
+        </details>
+        <details>
+          <summary>Nasıl kaldırırım?</summary>
+          <p>Ayarlar → Uygulamalar → My Screen → Kaldır. Güvenlik duvarı izni silinir; sanal ekran sürücüsü, kurulum onu kurduysa kaldırılır.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="alt final">
+      <div class="wrap">
+        <h2>Hazır mısın?</h2>
+        <p class="sub">Ücretsiz, açık kaynak, tek tık.</p>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/rcerdihan/my-screen/releases/latest/download/MyScreen-Setup.exe">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+            Windows için indir
+          </a>
+          <a class="btn" href="https://github.com/rcerdihan/my-screen/releases">Tüm sürümler</a>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <span>My Screen · Regaip Cuma Erdihan</span>
+        <span>
+          <a href="https://github.com/rcerdihan/my-screen">GitHub</a> ·
+          <a href="https://github.com/rcerdihan/my-screen/blob/main/THIRD_PARTY.md">Üçüncü taraf lisansları</a>
+        </span>
+      </div>
+    </footer>
+  </body>
+</html>
