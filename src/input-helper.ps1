@@ -3,31 +3,60 @@
 #   d / u  -> sol tuş bas / bırak
 #   r      -> sağ tık
 #   w N    -> dikey tekerlek, h N -> yatay tekerlek
+#
+# Hareket, gerçek fare girdisi olarak (SendInput, mutlak konum) gönderilir. Eskiden SetCursorPos
+# kullanılıyordu: imleç yer değiştiriyor ama Windows'a hareket olayı gitmiyordu; Paint gibi çizim
+# uygulamaları yalnızca basma ve bırakma noktasını görüp aralarına düz çizgi çekiyordu.
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public static class MyScreenInput {
   [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
-  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, int data, UIntPtr extra);
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+
+  [StructLayout(LayoutKind.Sequential)]
+  struct MOUSEINPUT { public int dx, dy; public int mouseData; public uint dwFlags, time; public UIntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Sequential)]
+  struct INPUT { public uint type; public MOUSEINPUT mi; } // 64 bitte 40 bayt: birleşimin en büyük üyesi MOUSEINPUT
+  [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint n, INPUT[] inputs, int size);
+
+  const uint MOVE = 0x0001, LEFTDOWN = 0x0002, LEFTUP = 0x0004, RIGHTDOWN = 0x0008, RIGHTUP = 0x0010;
+  const uint WHEEL = 0x0800, HWHEEL = 0x1000, VIRTUALDESK = 0x4000, ABSOLUTE = 0x8000;
+
+  static void Send(uint flags, int dx, int dy, int data) {
+    var input = new INPUT[1];
+    input[0].type = 0; // INPUT_MOUSE
+    input[0].mi.dx = dx; input[0].mi.dy = dy; input[0].mi.mouseData = data; input[0].mi.dwFlags = flags;
+    SendInput(1, input, Marshal.SizeOf(typeof(INPUT)));
+  }
+
+  // Fiziksel piksel konumunu tüm masaüstüne göre 0..65535 aralığına çevirip mutlak hareket gönder.
+  public static void MoveTo(int x, int y) {
+    int vx = GetSystemMetrics(76), vy = GetSystemMetrics(77), vw = GetSystemMetrics(78), vh = GetSystemMetrics(79);
+    if (vw < 2 || vh < 2) return;
+    int nx = (int)Math.Round((x - vx) * 65535.0 / (vw - 1));
+    int ny = (int)Math.Round((y - vy) * 65535.0 / (vh - 1));
+    Send(MOVE | ABSOLUTE | VIRTUALDESK, nx, ny, 0);
+  }
+  public static void Down() { Send(LEFTDOWN, 0, 0, 0); }
+  public static void Up() { Send(LEFTUP, 0, 0, 0); }
+  public static void RightClick() { Send(RIGHTDOWN, 0, 0, 0); Send(RIGHTUP, 0, 0, 0); }
+  public static void Wheel(int delta) { Send(WHEEL, 0, 0, delta); }
+  public static void HWheel(int delta) { Send(HWHEEL, 0, 0, delta); }
 }
 "@
 
 # Per-monitor DPI farkındalığı: koordinatlar gerçek piksel olsun.
 [MyScreenInput]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null
 
-$zero = [UIntPtr]::Zero
 while ($null -ne ($line = [Console]::In.ReadLine())) {
   $p = $line.Split(' ')
   switch ($p[0]) {
-    'm' { [MyScreenInput]::SetCursorPos([int]$p[1], [int]$p[2]) | Out-Null }
-    'd' { [MyScreenInput]::mouse_event(0x0002, 0, 0, 0, $zero) }
-    'u' { [MyScreenInput]::mouse_event(0x0004, 0, 0, 0, $zero) }
-    'r' {
-      [MyScreenInput]::mouse_event(0x0008, 0, 0, 0, $zero)
-      [MyScreenInput]::mouse_event(0x0010, 0, 0, 0, $zero)
-    }
-    'w' { [MyScreenInput]::mouse_event(0x0800, 0, 0, [int]$p[1], $zero) }
-    'h' { [MyScreenInput]::mouse_event(0x1000, 0, 0, [int]$p[1], $zero) }
+    'm' { [MyScreenInput]::MoveTo([int]$p[1], [int]$p[2]) }
+    'd' { [MyScreenInput]::Down() }
+    'u' { [MyScreenInput]::Up() }
+    'r' { [MyScreenInput]::RightClick() }
+    'w' { [MyScreenInput]::Wheel([int]$p[1]) }
+    'h' { [MyScreenInput]::HWheel([int]$p[1]) }
   }
 }
