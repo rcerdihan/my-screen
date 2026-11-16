@@ -115,11 +115,26 @@ function setupTouch(el, contentSize, send) {
         clearLongPress();
         dragging = true;
         send({ type: 'input', k: 'd' });
+        // Pointer olayı bu touchmove'dan önce geldiği için sürüklemenin ilk noktası orada kaçtı.
+        if (coalesced) sendMove(t);
       }
-      queueMove(t);
+      if (!coalesced) queueMove(t);
     },
     { passive: false }
   );
+
+  // Tarayıcı touchmove'u ekran yenilemesi başına bir kez verir; aradaki dokunma örneklerini
+  // (dokunmatik panel saniyede 120+ kez okur) yalnızca pointer olaylarının getCoalescedEvents()
+  // listesi taşır. Sürüklerken bunların hepsi gönderilir; çizim uygulamalarında eğriler köşeli
+  // parçalar yerine yumuşak çıkar.
+  const coalesced = 'PointerEvent' in window && 'getCoalescedEvents' in PointerEvent.prototype;
+  if (coalesced) {
+    el.addEventListener('pointermove', (e) => {
+      if (!dragging || consumed || e.pointerType !== 'touch' || !e.isPrimary) return;
+      const list = e.getCoalescedEvents();
+      for (const p of list.length ? list : [e]) sendMove(p);
+    });
+  }
 
   function onTouchEnd(e) {
     e.preventDefault();
