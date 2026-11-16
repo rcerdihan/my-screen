@@ -10,6 +10,14 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+# 32-bit PowerShell'de SetupAPI kök aygıtı oluşturamıyor (ERROR_IN_WOW64, -536870347). 64-bit'te yeniden başlat.
+if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+  $ps64 = Join-Path $env:WINDIR 'Sysnative\WindowsPowerShell\v1.0\powershell.exe'
+  $relaunch = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Action', $Action, '-ResDir', $ResDir)
+  if ($AppExe) { $relaunch += @('-AppExe', $AppExe) }
+  & $ps64 @relaunch
+  exit $LASTEXITCODE
+}
 $logDir = Join-Path $env:ProgramData 'MyScreen'
 New-Item -ItemType Directory -Force $logDir | Out-Null
 $log = Join-Path $logDir 'setup.log'

@@ -22,8 +22,23 @@ function grab(output, fps) {
   return `ddagrab=output_idx=${output}:framerate=240:dup_frames=0:draw_mouse=1,${limiter(fps)}`;
 }
 const NVENC = (mbps) => ['-c:v', 'h264_nvenc', '-preset', 'p1', '-tune', 'ull', '-zerolatency', '1', '-aud', '1', '-profile:v', 'high', ...rate(mbps), '-fps_mode', 'passthrough'];
+// Yedekler: NVIDIA sürücüsü eskiyse NVENC "Function not implemented" (-40) verip açılmıyor
+// (ffmpeg 9 yeni NVENC API'si istiyor). Media Foundation her üreticinin sürücüsündeki donanım
+// kodlayıcıyı kullanır; OpenH264 yazılımla kodlar (yavaş ama her yerde çalışır).
+const FALLBACKS = [
+  {
+    name: 'Windows Media Foundation',
+    filter: (o, fps) => `${grab(o, fps)},hwdownload,format=bgra,format=nv12`,
+    args: (mbps) => ['-c:v', 'h264_mf', '-hw_encoding', '1', '-scenario', 'display_remoting', '-rate_control', 'cbr', '-aud', '1', ...rate(mbps), '-fps_mode', 'passthrough'],
+  },
+  {
+    name: 'OpenH264 (yazılım)',
+    filter: (o, fps) => `${grab(o, Math.min(fps, 60))},hwdownload,format=bgra,format=yuv420p`,
+    args: (mbps) => ['-c:v', 'libopenh264', '-b:v', `${Math.min(mbps, 20)}M`, '-g', '100000', '-bsf:v', 'h264_metadata=aud=insert', '-fps_mode', 'passthrough'],
+  },
+];
 const CHAINS = {
-  nvidia: [{ name: 'NVIDIA NVENC (kopyasız)', filter: (o, fps) => grab(o, fps), args: (mbps) => NVENC(mbps) }],
+  nvidia: [{ name: 'NVIDIA NVENC (kopyasız)', filter: (o, fps) => grab(o, fps), args: (mbps) => NVENC(mbps) }, ...FALLBACKS],
   other: [
     { name: 'NVIDIA NVENC', filter: (o, fps) => `${grab(o, fps)},hwdownload,format=bgra`, args: (mbps) => NVENC(mbps) },
     {
@@ -32,6 +47,7 @@ const CHAINS = {
       // Quick Sync 120'nin üstündeki kare hızını kabul etmiyor.
       args: (mbps, fps) => ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-async_depth', '2', '-look_ahead', '0', '-aud', '1', '-profile:v', 'high', ...rate(mbps), '-r', String(Math.min(120, fps))],
     },
+    ...FALLBACKS,
   ],
 };
 
