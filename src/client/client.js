@@ -1,7 +1,7 @@
 // Telefon sayfası: bilgisayarın ffmpeg ile kodladığı H.264 karelerini WebSocket'ten alır,
 // WebCodecs ile donanımda çözer ve tuvale çizer. Dokunuşları fare girdisi olarak geri gönderir.
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+const ctx = canvas.getContext('2d', { alpha: false });
 const overlay = document.getElementById('overlay');
 const message = document.getElementById('message');
 const startBtn = document.getElementById('start');
@@ -17,7 +17,7 @@ let stopped = false;
 let started = false;
 let needKey = true;
 let frameSize = { width: 0, height: 0 };
-const counters = { received: 0, decoded: 0, dropped: 0, bytes: 0, decodeMs: 0 };
+const counters = { received: 0, decoded: 0, dropped: 0, bytes: 0, decodeMs: 0, painted: 0, late: 0, drawMs: 0 };
 const sentAt = new Map(); // timestamp -> çözücüye verilme zamanı
 
 function show(text, withButton) {
@@ -55,13 +55,77 @@ function codecFromAnnexB(data) {
   return '';
 }
 
-function drawFrame(frame) {
+// Gösterim iki yoldan biriyle yapılır:
+// 1) Video yolu (tercih edilen): çözülen kareler MediaStreamTrackGenerator ile bir <video> öğesine
+//    verilir. Tarayıcının video oynatıcısı kareleri donanım katmanıyla, ekran yenilemesine hizalı
+//    gösterir. Tablette 2560x1600 tuvale çizmek saniyede 8-14 yenilemenin kaçmasına yol açıyordu.
+// 2) Tuval yolu (yedek): tarayıcı bunu desteklemiyorsa her yenilemede en son kare tuvale çizilir.
+const video = document.getElementById('video');
+const useVideo = 'MediaStreamTrackGenerator' in window && !params.has('canvas');
+let trackWriter = null;
+if (useVideo) {
+  const generator = new MediaStreamTrackGenerator({ kind: 'video' });
+  trackWriter = generator.writable.getWriter();
+  video.srcObject = new MediaStream([generator]);
+  video.hidden = false;
+  canvas.hidden = true;
+  // Gerçekten ekranda gösterilen kareleri say.
+  if ('requestVideoFrameCallback' in video) {
+    let lastPresented = -1;
+    let lastTime = 0;
+    const onPresented = (now, meta) => {
+      if (lastPresented >= 0) counters.painted += Math.max(0, meta.presentedFrames - lastPresented);
+      if (lastTime && now - lastTime > 25) counters.late++;
+      lastPresented = meta.presentedFrames;
+      lastTime = now;
+      video.requestVideoFrameCallback(onPresented);
+    };
+    video.requestVideoFrameCallback(onPresented);
+  }
+}
+
+let latestFrame = null;
+let rafPending = false;
+let lastRaf = 0;
+function paint(now) {
+  rafPending = false;
+  if (lastRaf && now - lastRaf > 25) counters.late++; // bir yenileme kaçırıldı (60 Hz'te ~16,7 ms)
+  lastRaf = now;
+  const frame = latestFrame;
+  latestFrame = null;
+  if (!frame) return;
   if (frame.displayWidth !== canvas.width || frame.displayHeight !== canvas.height) {
     canvas.width = frame.displayWidth;
     canvas.height = frame.displayHeight;
-    frameSize = { width: frame.displayWidth, height: frame.displayHeight };
   }
+  const t0 = performance.now();
   ctx.drawImage(frame, 0, 0);
+  counters.drawMs += performance.now() - t0;
+  counters.painted++;
+  frame.close();
+}
+function drawFrame(frame) {
+  frameSize = { width: frame.displayWidth, height: frame.displayHeight };
+  if (useVideo) {
+    // Oynatıcı yetişemiyorsa kuyruğu büyütme, bu kareyi atla.
+    if (trackWriter.desiredSize !== null && trackWriter.desiredSize <= 0) {
+      counters.dropped++;
+      frame.close();
+      return;
+    }
+    trackWriter.write(frame).catch(() => {});
+    if (video.paused) video.play().catch(() => {});
+    return;
+  }
+  if (latestFrame) {
+    latestFrame.close();
+    counters.dropped++;
+  }
+  latestFrame = frame;
+  if (!rafPending) {
+    rafPending = true;
+    requestAnimationFrame(paint);
+  }
 }
 
 function createDecoder(codec) {
@@ -74,14 +138,7 @@ function createDecoder(codec) {
         sentAt.delete(frame.timestamp);
       }
       counters.decoded++;
-      // Çözücüde birikme varsa yalnızca en yeni kareyi çiz.
-      if (decoder.decodeQueueSize > 0) {
-        counters.dropped++;
-        frame.close();
-        return;
-      }
       drawFrame(frame);
-      frame.close();
     },
     error: (err) => {
       console.error(err);
@@ -225,18 +282,18 @@ startBtn.addEventListener('click', async () => {
 // Ölçümleri bilgisayara gönder.
 setInterval(() => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const line = `alinan=${counters.received} cozulen=${counters.decoded} atlanan=${counters.dropped} mbps=${((counters.bytes * 8) / 1e6).toFixed(1)} cozmeMs=${counters.decoded ? (counters.decodeMs / counters.decoded).toFixed(1) : '?'} kuyruk=${decoder ? decoder.decodeQueueSize : '?'} ${frameSize.width}x${frameSize.height} ${configuredCodec}`;
+  const line = `yol=${useVideo ? 'video' : 'tuval'} alinan=${counters.received} cozulen=${counters.decoded} cizilen=${counters.painted} gecYenileme=${counters.late} cizimMs=${counters.painted ? (counters.drawMs / counters.painted).toFixed(1) : '?'} atlanan=${counters.dropped} mbps=${((counters.bytes * 8) / 1e6).toFixed(1)} cozmeMs=${counters.decoded ? (counters.decodeMs / counters.decoded).toFixed(1) : '?'} kuyruk=${decoder ? decoder.decodeQueueSize : '?'} ${frameSize.width}x${frameSize.height} ${configuredCodec}`;
   wsSend({ type: 'stats', line });
   if (showHud) {
     hud.hidden = false;
-    hud.textContent = `${counters.decoded} fps · ${((counters.bytes * 8) / 1e6).toFixed(0)} Mbps · çözme ${counters.decoded ? (counters.decodeMs / counters.decoded).toFixed(1) : '?'} ms`;
+    hud.textContent = `${counters.painted} fps çizilen (${counters.decoded} çözülen) · ${((counters.bytes * 8) / 1e6).toFixed(0)} Mbps · çözme ${counters.decoded ? (counters.decodeMs / counters.decoded).toFixed(1) : '?'} ms`;
   }
-  counters.received = counters.decoded = counters.dropped = counters.bytes = counters.decodeMs = 0;
+  counters.received = counters.decoded = counters.dropped = counters.bytes = counters.decodeMs = counters.painted = counters.late = counters.drawMs = 0;
 }, 1000);
 
-setupTouch(canvas, () => frameSize, wsSend);
+setupTouch(document.getElementById('stage'), () => frameSize, wsSend);
 // Bazı tarayıcılar kilidi yalnızca bir dokunuştan sonra verir; her dokunuşta kontrol et (zaten varsa bir şey yapmaz).
-canvas.addEventListener('touchend', keepScreenOn);
+document.getElementById('stage').addEventListener('touchend', keepScreenOn);
 keepScreenOn();
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
