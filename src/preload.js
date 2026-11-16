@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('myscreen', {
   onDisplays: (cb) => ipcRenderer.on('displays', (e, data) => cb(data)),
   disconnectViewer: () => ipcRenderer.invoke('disconnect-viewer'),
   setDevice: (id) => ipcRenderer.invoke('set-device', id),
+  setSide: (side) => ipcRenderer.invoke('set-side', side),
   onViewer: (cb) => ipcRenderer.on('viewer', (e, info) => cb(info)),
   onStreamStatus: (cb) => ipcRenderer.on('stream-status', (e, info) => cb(info)),
 });

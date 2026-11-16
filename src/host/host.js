@@ -147,6 +147,18 @@ deviceSelect.onchange = async () => {
   }
 };
 
+// ---------- sanal ekranın konumu ----------
+const sideSelect = $('side');
+sideSelect.onchange = async () => {
+  sideSelect.disabled = true;
+  const result = await api.setSide(sideSelect.value);
+  sideSelect.disabled = false;
+  deviceStatus.hidden = false;
+  deviceStatus.textContent = result.ok
+    ? `Sanal ekran laptop ekranının ${sideSelect.value === 'left' ? 'soluna' : 'sağına'} alındı.`
+    : `Konum değiştirilemedi: ${result.error}`;
+};
+
 // ---------- olaylar ----------
 displaySelect.onchange = () => api.selectDisplay(Number(displaySelect.value));
 mbpsSelect.onchange = () => api.setMbps(Number(mbpsSelect.value));
@@ -165,6 +177,7 @@ api.onDisplays(({ displays, selectedDisplayId }) => renderDisplays(displays, sel
   $('manageVirtual').checked = state.manageVirtualDisplay;
   showViewer(state.viewerIp);
   renderDevices(state.devices, state.device);
+  sideSelect.value = state.virtualSide || 'right';
   mbpsSelect.value = String(state.mbps || 30);
   renderDisplays(state.displays, state.selectedDisplayId);
   renderEntries(state.entries);

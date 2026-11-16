@@ -26,6 +26,7 @@ let config = {
   nativeOutputs: {},
   manageVirtualDisplay: true, // sanal ekranı uygulama açılınca bağla, kapanınca ayır
   device: 'galaxy-a36', // sanal ekranın hangi cihaza göre ayarlandığı (DEVICES)
+  virtualSide: 'right', // sanal ekran Windows'ta laptop ekranının sağında mı solunda mı
   virtualMode: { width: 2340, height: 1080, hz: 120, x: -1, y: 0 }, // son kullanılan sanal ekran düzeni
 };
 let viewerSocket = null;
@@ -168,7 +169,7 @@ async function applyDevice(id) {
     }
     if (!(modes.modes || []).includes(want)) return { ok: false, error: `${want} modu sürücüde görünmedi` };
   }
-  const result = await runDisplayHelper('set', { width: device.width, height: device.height, hz: device.hz, x: -1, y: 0 });
+  const result = await runDisplayHelper('set', { width: device.width, height: device.height, hz: device.hz, x: sideX(device.width), y: 0 });
   logStats(`cihaz ${device.id} uygulandi: ${JSON.stringify(result)}`);
   if (!result.ok) return { ok: false, error: `Ekran ayarı uygulanamadı (kod ${result.result})` };
   config.device = device.id;
@@ -177,11 +178,28 @@ async function applyDevice(id) {
   return { ok: true, mode: config.virtualMode };
 }
 
+// Sanal ekranın masaüstündeki yatay konumu: laptop ekranının sağı ya da solu (üst kenarlar hizalı).
+function sideX(width) {
+  if (config.virtualSide === 'left') return -width;
+  const p = screen.getPrimaryDisplay();
+  return Math.round(p.bounds.x * p.scaleFactor + p.size.width * p.scaleFactor);
+}
+async function applySide(side) {
+  config.virtualSide = side === 'left' ? 'left' : 'right';
+  saveConfig();
+  const st = await runDisplayHelper('status');
+  if (!st.attached) return { ok: true };
+  const result = await runDisplayHelper('set', { width: st.width, height: st.height, hz: st.hz, x: sideX(st.width), y: 0 });
+  logStats(`sanal ekran konumu ${config.virtualSide}: ${JSON.stringify(result)}`);
+  return result.ok ? { ok: true } : { ok: false, error: `Konum değiştirilemedi (kod ${result.result})` };
+}
+
 // ---------- sanal ekranı aç/kapat ----------
 const DISPLAY_HELPER = path.join(__dirname, 'display-helper.ps1');
 function displayHelperArgs(action, mode) {
   const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', DISPLAY_HELPER, action];
-  if (mode) args.push(String(mode.width), String(mode.height), String(mode.hz || 0), String(mode.x ?? -1), String(mode.y || 0));
+  // Adlandırılmış parametre: konumsal verince PowerShell '-2560' gibi negatif sayıları parametre adı sanıyor.
+  if (mode) args.push('-Width', String(mode.width), '-Height', String(mode.height), '-Hz', String(mode.hz || 0), '-X', String(mode.x ?? -99999), '-Y', String(mode.y || 0));
   return args;
 }
 function parseHelper(out) {
@@ -193,7 +211,7 @@ function parseHelper(out) {
 }
 function attachVirtualDisplay() {
   return new Promise((resolve) => {
-    execFile('powershell.exe', displayHelperArgs('attach', config.virtualMode), { windowsHide: true, timeout: 20000 }, (err, stdout) => {
+    execFile('powershell.exe', displayHelperArgs('attach', { ...config.virtualMode, x: sideX(config.virtualMode.width), y: 0 }), { windowsHide: true, timeout: 20000 }, (err, stdout) => {
       const result = err ? { ok: false, error: err.message } : parseHelper(stdout);
       logStats(`sanal ekran baglama: ${JSON.stringify(result)}`);
       resolve(result);
@@ -596,6 +614,7 @@ app.whenReady().then(async () => {
       mbps: config.nativeMbps,
       manageVirtualDisplay: config.manageVirtualDisplay,
       devices: DEVICES,
+      virtualSide: config.virtualSide,
       device: config.device,
       viewerIp: viewerSocket ? viewerSocket.myScreenIp : '',
       ffmpegAvailable: streamer.available,
@@ -621,6 +640,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('disconnect-viewer', () => disconnectViewer());
   ipcMain.handle('set-device', (e, id) => applyDevice(id));
+  ipcMain.handle('set-side', (e, side) => applySide(side));
   ipcMain.handle('set-manage-virtual-display', async (e, value) => {
     config.manageVirtualDisplay = !!value;
     saveConfig();

@@ -4,9 +4,9 @@
 #   attach W H HZ X Y           -> sanal ekranı bu çözünürlük/hız/konumla bağlar
 #   detach                      -> sanal ekranı ayırır (önce durumunu yazar)
 #   modes                       -> sürücünün sunduğu çözünürlük@hız listesini yazar
-#   set W H HZ                  -> bağlıyken çözünürlüğü/hızı değiştirir (bağlı değilse bağlar)
+#   set W H HZ [X Y]            -> çözünürlüğü/hızı (ve verilirse konumu) değiştirir; bağlı değilse bağlar
 # Çıktı: tek satır JSON.
-param([string]$Action = 'status', [int]$Width = 0, [int]$Height = 0, [int]$Hz = 0, [int]$X = -1, [int]$Y = 0)
+param([string]$Action = 'status', [int]$Width = 0, [int]$Height = 0, [int]$Hz = 0, [int]$X = -99999, [int]$Y = 0) # X verilmezse: bağlıysa mevcut konum, değilse ana ekranın sağı
 
 Add-Type @"
 using System;
@@ -112,8 +112,8 @@ switch ($Action) {
   'modes' { $state.modes = [VirtualDisplay]::Modes($name); Out-Json $state }
   # Bağlıyken çözünürlük/hızı değiştir (konum korunur); bağlı değilse bu modla bağla.
   'set' {
-    $px = if ($attached -and $mode) { $mode[3] } elseif ($X -ge 0) { $X } else { [VirtualDisplay]::PrimaryRight() }
-    $py = if ($attached -and $mode) { $mode[4] } else { $Y }
+    $px = if ($X -ne -99999) { $X } elseif ($attached -and $mode) { $mode[3] } else { [VirtualDisplay]::PrimaryRight() }
+    $py = if ($X -ne -99999) { $Y } elseif ($attached -and $mode) { $mode[4] } else { $Y }
     $r = [VirtualDisplay]::Apply($name, $Width, $Height, $Hz, $px, $py)
     $state.result = $r
     $state.ok = ($r -eq 0)
@@ -131,7 +131,7 @@ switch ($Action) {
   }
   'attach' {
     if (-not $attached) {
-      if ($X -lt 0) { $X = [VirtualDisplay]::PrimaryRight() }
+      if ($X -eq -99999) { $X = [VirtualDisplay]::PrimaryRight() }
       $r = [VirtualDisplay]::Apply($name, $Width, $Height, $Hz, $X, $Y)
       if ($r -ne 0 -and $Hz -gt 0) { $r = [VirtualDisplay]::Apply($name, $Width, $Height, 0, $X, $Y) } # hız desteklenmezse varsayılanla dene
       $state.result = $r
