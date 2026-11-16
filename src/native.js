@@ -8,21 +8,32 @@ const path = require('path');
 const AUD = Buffer.from([0, 0, 0, 1, 0x09]);
 const MAX_BUFFERED = 8 * 1024 * 1024; // telefona gidemeyen veri bu kadarı geçerse kareleri atla
 
-// Sırayla denenecek kodlayıcılar. İlki çalışmazsa (ör. Quick Sync yoksa) bir sonrakine geçilir.
-// NVENC ölçümde 144 fps'e kadar çıktı. Quick Sync 120'nin üstündeki kare hızını kabul etmediği için
-// sabit 120 fps'e zorlanıyor (ekran dururken kare çoğaltabilir); yalnızca yedek olarak duruyor.
-const ENCODERS = [
-  {
-    name: 'NVIDIA NVENC',
-    filter: (idx) => `ddagrab=output_idx=${idx}:framerate=240:dup_frames=0:draw_mouse=1,hwdownload,format=bgra`,
-    args: (mbps) => ['-c:v', 'h264_nvenc', '-preset', 'p1', '-tune', 'ull', '-zerolatency', '1', '-aud', '1', ...rate(mbps), '-fps_mode', 'passthrough'],
-  },
-  {
-    name: 'Intel Quick Sync',
-    filter: (idx) => `ddagrab=output_idx=${idx}:framerate=240:dup_frames=0:draw_mouse=1,hwmap=derive_device=qsv,format=qsv`,
-    args: (mbps) => ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-async_depth', '2', '-look_ahead', '0', '-aud', '1', ...rate(mbps), '-r', '120'],
-  },
-];
+// Ekran yakalandığı ekran kartına göre kodlayıcı zinciri seçilir:
+// - Sanal ekran NVIDIA'daysa kareler kopyalanmadan NVENC'e gider (2560x1600'de ~90+ fps ölçüldü).
+// - Intel'deyse kareler ya belleğe indirilip NVENC'e verilir ya da Quick Sync kullanılır. Bu yol
+//   2560x1600'de ~40 fps'te tıkandı; bu yüzden sanal ekran sürücüsü NVIDIA'ya ayarlı.
+// Her zincir sırayla denenir; ilki hemen çökerse sıradakine geçilir.
+// Seyreltme: saniye "en fazla fps" kadar dilime bölünür, her dilimden en fazla bir kare kodlanır.
+// Ekranın yenileme hızından fazla kare göndermek tablette kuyruk ve takılma yapıyordu.
+function limiter(fps) {
+  return `select='isnan(prev_selected_t)+gt(floor(t*${fps})\\,floor(prev_selected_t*${fps}))'`;
+}
+function grab(output, fps) {
+  return `ddagrab=output_idx=${output}:framerate=240:dup_frames=0:draw_mouse=1,${limiter(fps)}`;
+}
+const NVENC = (mbps) => ['-c:v', 'h264_nvenc', '-preset', 'p1', '-tune', 'ull', '-zerolatency', '1', '-aud', '1', ...rate(mbps), '-fps_mode', 'passthrough'];
+const CHAINS = {
+  nvidia: [{ name: 'NVIDIA NVENC (kopyasız)', filter: (o, fps) => grab(o, fps), args: (mbps) => NVENC(mbps) }],
+  other: [
+    { name: 'NVIDIA NVENC', filter: (o, fps) => `${grab(o, fps)},hwdownload,format=bgra`, args: (mbps) => NVENC(mbps) },
+    {
+      name: 'Intel Quick Sync',
+      filter: (o, fps) => `${grab(o, fps)},hwmap=derive_device=qsv,format=qsv`,
+      // Quick Sync 120'nin üstündeki kare hızını kabul etmiyor.
+      args: (mbps, fps) => ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-async_depth', '2', '-look_ahead', '0', '-aud', '1', ...rate(mbps), '-r', String(Math.min(120, fps))],
+    },
+  ],
+};
 
 function rate(mbps) {
   return ['-b:v', `${mbps}M`, '-maxrate', `${mbps}M`, '-bufsize', `${Math.max(1, Math.round(mbps / 15))}M`, '-bf', '0', '-g', '100000'];
@@ -46,12 +57,27 @@ function findFfmpeg() {
   return null;
 }
 
-// ffmpeg'in ekran numarası (output_idx) ile Windows ekranını eşleştir: çözünürlüğe bakarak.
-function probeOutput(ffmpeg, idx) {
+// Ekran kartının üreticisini öğren (10de = NVIDIA, 8086 = Intel). Kart yoksa null.
+function probeAdapter(ffmpeg, adapter) {
   return new Promise((resolve) => {
     execFile(
       ffmpeg,
-      ['-hide_banner', '-f', 'lavfi', '-i', `ddagrab=output_idx=${idx}:framerate=5`, '-frames:v', '1', '-f', 'null', '-'],
+      ['-hide_banner', '-v', 'verbose', '-init_hw_device', `d3d11va=g:${adapter}`, '-f', 'lavfi', '-i', 'nullsrc=s=16x16', '-frames:v', '1', '-f', 'null', '-'],
+      { windowsHide: true, timeout: 8000 },
+      (err, stdout, stderr) => {
+        const m = String(stderr).match(/Using device ([0-9a-f]{4}):([0-9a-f]{4})/i);
+        resolve(m ? { vendor: m[1].toLowerCase() === '10de' ? 'nvidia' : 'other', id: `${m[1]}:${m[2]}` } : null);
+      }
+    );
+  });
+}
+
+// Kartın verilen çıkışının çözünürlüğü (ekran Windows'taki hangi monitör, buna bakarak eşleşiyor).
+function probeOutput(ffmpeg, adapter, output) {
+  return new Promise((resolve) => {
+    execFile(
+      ffmpeg,
+      ['-hide_banner', '-init_hw_device', `d3d11va=g:${adapter}`, '-filter_hw_device', 'g', '-filter_complex', `ddagrab=output_idx=${output}:framerate=5`, '-frames:v', '1', '-f', 'null', '-'],
       { windowsHide: true, timeout: 8000 },
       (err, stdout, stderr) => {
         const m = String(stderr).match(/Stream #0:0.*?Video:.*?(\d{3,5})x(\d{3,5})/);
@@ -72,7 +98,7 @@ function nalTypes(au) {
   return types;
 }
 
-// cache: önceki oturumlardan "genişlik x yükseklik" -> output_idx eşlemesi (yoklama ekran başına ~3 sn sürüyor).
+// cache: önceki oturumlardan "genişlik x yükseklik" -> { kart, çıkış, üretici } eşlemesi (yoklama ekran başına ~1-3 sn sürüyor).
 // onNeedFrame: ekran dururken Desktop Duplication yeni kare vermez; yayın başlarken ilk kare gelmezse
 // çağrılır ki ekranda küçük bir değişiklik yapılıp ilk kare tetiklensin.
 function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {}, saveCache = () => {} }) {
@@ -82,7 +108,9 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
   let socket = null;
   let display = null; // { width, height }
   let mbps = 30;
+  let maxFps = 120; // ekranın yenileme hızından fazlası gönderilmez (fazlası yalnızca aynı karenin tekrarı)
   let encoderIndex = 0;
+  let currentEncoder = '';
   let pending = Buffer.alloc(0);
   let waitingKey = true;
   let restartTimer = null;
@@ -91,26 +119,36 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
   let generation = 0;
 
   let probing = null;
-  async function findOutputIndex(size = display) {
+  // Önbellekteki değer: { adapter, output, vendor }. Eski sürümden kalan sayı değerler geçersiz sayılır.
+  const valid = (v) => v && typeof v === 'object' && Number.isInteger(v.adapter) && Number.isInteger(v.output);
+  async function findOutput(size = display) {
     const key = `${size.width}x${size.height}`;
-    if (outputCache.has(key)) return outputCache.get(key);
+    if (valid(outputCache.get(key))) return outputCache.get(key);
     if (probing) await probing; // aynı anda iki yoklama yapma
-    if (outputCache.has(key)) return outputCache.get(key);
+    if (valid(outputCache.get(key))) return outputCache.get(key);
     let resolveProbe;
     probing = new Promise((r) => (resolveProbe = r));
     try {
-      for (let idx = 0; idx < 6; idx++) {
-        const found = await probeOutput(ffmpeg, idx);
-        if (!found) break;
-        outputCache.set(`${found.width}x${found.height}`, idx);
-        if (found.width === size.width && found.height === size.height) break;
+      const seen = new Set();
+      outer: for (let adapter = 0; adapter < 4; adapter++) {
+        const info = await probeAdapter(ffmpeg, adapter);
+        if (!info) break;
+        for (let output = 0; output < 6; output++) {
+          const found = await probeOutput(ffmpeg, adapter, output);
+          if (!found) break;
+          const k = `${found.width}x${found.height}`;
+          if (seen.has(`${info.id}/${k}`)) continue; // aynı kart iki kez listelenebiliyor
+          seen.add(`${info.id}/${k}`);
+          if (!valid(outputCache.get(k))) outputCache.set(k, { adapter, output, vendor: info.vendor });
+          if (k === key) break outer;
+        }
       }
-      saveCache(Object.fromEntries(outputCache));
+      saveCache(Object.fromEntries([...outputCache].filter(([, v]) => valid(v))));
     } finally {
       probing = null;
       resolveProbe();
     }
-    return outputCache.has(key) ? outputCache.get(key) : null;
+    return valid(outputCache.get(key)) ? outputCache.get(key) : null;
   }
 
   function sendFrame(au) {
@@ -173,14 +211,23 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
       status('error', 'ffmpeg bulunamadı');
       return;
     }
-    const idx = await findOutputIndex();
+    const target = await findOutput();
     if (myGeneration !== generation || !socket) return;
-    if (idx === null) {
+    if (!target) {
       status('error', `ffmpeg ${display.width}×${display.height} ekranını bulamadı`);
       return;
     }
-    const encoder = ENCODERS[encoderIndex];
-    const args = ['-hide_banner', '-loglevel', 'error', '-filter_complex', encoder.filter(idx), ...encoder.args(mbps), '-f', 'h264', 'pipe:1'];
+    const chain = CHAINS[target.vendor] || CHAINS.other;
+    if (encoderIndex >= chain.length) encoderIndex = 0;
+    const encoder = chain[encoderIndex];
+    currentEncoder = encoder.name;
+    const args = [
+      '-hide_banner', '-loglevel', 'error',
+      '-init_hw_device', `d3d11va=g:${target.adapter}`, '-filter_hw_device', 'g',
+      '-filter_complex', encoder.filter(target.output, maxFps),
+      ...encoder.args(mbps, maxFps),
+      '-f', 'h264', 'pipe:1',
+    ];
     waitingKey = true;
     const startedAt = Date.now();
     let gotData = false;
@@ -198,7 +245,7 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
       proc = null;
       log(`yerel ffmpeg cikti kod=${code} kodlayici=${encoder.name} ${errText.replace(/\s+/g, ' ').trim()}`);
       // Hemen çöktüyse sıradaki kodlayıcıyı dene.
-      if (!gotData && Date.now() - startedAt < 4000 && encoderIndex < ENCODERS.length - 1) {
+      if (!gotData && Date.now() - startedAt < 4000 && encoderIndex < chain.length - 1) {
         encoderIndex++;
         start();
       } else if (socket) {
@@ -211,8 +258,8 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
         if (myGeneration === generation && socket && waitingKey) onNeedFrame();
       }, delay);
     }
-    status('live', `${encoder.name} · ekran ${idx} · ${display.width}×${display.height}`);
-    log(`yerel basladi kodlayici=${encoder.name} output_idx=${idx} ${display.width}x${display.height} ${mbps}Mbps`);
+    status('live', `${encoder.name} · ${display.width}×${display.height} · en fazla ${maxFps} fps`);
+    log(`yerel basladi kodlayici=${encoder.name} kart=${target.adapter} cikis=${target.output} ${display.width}x${display.height} ${mbps}Mbps en-fazla-${maxFps}fps`);
   }
 
   function scheduleRestart(reason, delay = 200) {
@@ -240,20 +287,21 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
     },
     // Telefon bağlanmadan önce ekran eşlemesini hazırla.
     warmup(size) {
-      if (ffmpeg) findOutputIndex(size).catch(() => {});
+      if (ffmpeg) findOutput(size).catch(() => {});
     },
-    attach(ws, displaySize, bitrateMbps) {
+    attach(ws, displaySize, bitrateMbps, fps) {
       socket = ws;
       display = displaySize;
       if (bitrateMbps) mbps = bitrateMbps;
+      if (fps) maxFps = fps;
       encoderIndex = 0;
       stats = { frames: 0, bytes: 0, skipped: 0 };
       clearInterval(statsTimer);
       statsTimer = setInterval(() => {
         if (!socket) return;
-        const line = `yerel fps=${stats.frames} mbps=${((stats.bytes * 8) / 1e6).toFixed(1)} atlanan=${stats.skipped} tampon=${Math.round((socket.bufferedAmount || 0) / 1024)}KB kodlayici=${ENCODERS[encoderIndex].name}`;
+        const line = `yerel fps=${stats.frames} mbps=${((stats.bytes * 8) / 1e6).toFixed(1)} atlanan=${stats.skipped} tampon=${Math.round((socket.bufferedAmount || 0) / 1024)}KB kodlayici=${currentEncoder}`;
         log(line);
-        if (onStatus) onStatus({ state: 'stats', fps: stats.frames, mbps: (stats.bytes * 8) / 1e6, encoder: ENCODERS[encoderIndex].name });
+        if (onStatus) onStatus({ state: 'stats', fps: stats.frames, mbps: (stats.bytes * 8) / 1e6, encoder: currentEncoder });
         stats = { frames: 0, bytes: 0, skipped: 0 };
       }, 1000);
       start();
@@ -266,8 +314,9 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
       status('idle', '');
     },
     // Ekran değişti ya da telefon temiz bir anahtar kare istedi.
-    restart(displaySize) {
+    restart(displaySize, fps) {
       if (displaySize) display = displaySize;
+      if (fps) maxFps = fps;
       if (socket) start();
     },
     setBitrate(value) {

@@ -84,6 +84,10 @@ function selectedPixelSize() {
   const d = selectedDisplay();
   return { width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor) };
 }
+// Yayınlanan ekranın yenileme hızı: bundan fazla kare göndermek yalnızca tekrar ve tablette takılma demek.
+function selectedHz() {
+  return Math.max(30, Math.round(selectedDisplay().displayFrequency || 60));
+}
 function refreshTargetRect() {
   targetRect = screen.dipToScreenRect(null, selectedDisplay().bounds);
 }
@@ -96,7 +100,7 @@ function onDisplaysChanged() {
   lastDisplayKey = key;
   streamer.resetCache();
   streamer.warmup(selectedPixelSize());
-  streamer.restart(selectedPixelSize());
+  streamer.restart(selectedPixelSize(), selectedHz());
   if (win) win.webContents.send('displays', { displays: listDisplays(), selectedDisplayId: selectedDisplay().id });
 }
 
@@ -461,7 +465,7 @@ function onViewer(socket, ip) {
     send(socket, { type: 'error', text: 'Bilgisayarda ffmpeg bulunamadı. My Screen penceresindeki talimatı izle.' });
     return;
   }
-  streamer.attach(socket, selectedPixelSize(), config.nativeMbps);
+  streamer.attach(socket, selectedPixelSize(), config.nativeMbps, selectedHz());
 }
 
 function onUpgrade(wss, req, socket, head) {
@@ -604,7 +608,7 @@ app.whenReady().then(async () => {
     saveConfig();
     refreshTargetRect();
     streamer.warmup(selectedPixelSize());
-    streamer.restart(selectedPixelSize());
+    streamer.restart(selectedPixelSize(), selectedHz());
   });
   ipcMain.handle('set-input-enabled', (e, value) => {
     config.inputEnabled = !!value;

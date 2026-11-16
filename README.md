@@ -2,7 +2,9 @@
 
 Android telefonu Windows bilgisayarın ikinci ekranı olarak kullanır. Görüntü Wi-Fi etkin nokta veya USB kablo üzerinden, internete çıkmadan doğrudan telefona akar. Telefonda uygulama kurmak gerekmez; tarayıcı yeterlidir (Samsung Internet önerilir).
 
-Ekran ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalanır, NVIDIA NVENC (yoksa Intel Quick Sync) ile H.264'e kodlanır ve telefonda donanımla (WebCodecs) çözülür. Test ortamında 2340×1080'de 140+ fps ölçüldü.
+Ekran ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalanır, NVIDIA NVENC (yoksa Intel Quick Sync) ile H.264'e kodlanır ve telefonda donanımla (WebCodecs) çözülür. Gönderilen kare hızı sanal ekranın yenileme hızıyla sınırlanır (A36: 120, Tab S6: 60).
+
+İki ekran kartlı dizüstülerde sanal ekranı NVIDIA kartına ayarlamak (`vdd_settings.xml` → `<friendlyname>NVIDIA …</friendlyname>`) kareleri kopyalamadan kodlamayı sağlar; Intel kartta 2560×1600'de ~40 fps'te tıkanıyordu, NVIDIA'da sabit 60 fps ölçüldü.
 
 ## Gereksinimler
 
