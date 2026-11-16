@@ -115,10 +115,9 @@ function setupTouch(el, contentSize, send) {
         clearLongPress();
         dragging = true;
         send({ type: 'input', k: 'd' });
-        // Pointer olayı bu touchmove'dan önce geldiği için sürüklemenin ilk noktası orada kaçtı.
-        if (coalesced) sendMove(t);
       }
-      if (!coalesced) queueMove(t);
+      if (pointerSent) pointerSent = false;
+      else queueMove(t);
     },
     { passive: false }
   );
@@ -127,12 +126,17 @@ function setupTouch(el, contentSize, send) {
   // (dokunmatik panel saniyede 120+ kez okur) yalnızca pointer olaylarının getCoalescedEvents()
   // listesi taşır. Sürüklerken bunların hepsi gönderilir; çizim uygulamalarında eğriler köşeli
   // parçalar yerine yumuşak çıkar.
+  // Bazı tarayıcılar (ör. tablette Samsung Internet) pointer olaylarını sürüklemenin başında
+  // pointercancel ile kesiyor; o yüzden her touchmove'da, o arada pointer olayıyla konum gönderilip
+  // gönderilmediğine bakılır, gönderilmediyse touchmove'un kendi konumu gönderilir.
   const coalesced = 'PointerEvent' in window && 'getCoalescedEvents' in PointerEvent.prototype;
+  let pointerSent = false;
   if (coalesced) {
     el.addEventListener('pointermove', (e) => {
       if (!dragging || consumed || e.pointerType !== 'touch' || !e.isPrimary) return;
       const list = e.getCoalescedEvents();
       for (const p of list.length ? list : [e]) sendMove(p);
+      pointerSent = true;
     });
   }
 
