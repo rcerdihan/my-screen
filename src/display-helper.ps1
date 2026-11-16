@@ -36,6 +36,11 @@ public static class VirtualDisplay {
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplaySettings(string dev, int mode, ref DEVMODE dm);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettingsEx(string dev, ref DEVMODE dm, IntPtr hwnd, int flags, IntPtr param);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettingsEx(string dev, IntPtr dm, IntPtr hwnd, int flags, IntPtr param);
+  [DllImport("user32.dll")] static extern int SetDisplayConfig(uint numPaths, IntPtr paths, uint numModes, IntPtr modes, uint flags);
+
+  // Win+P "Genişlet" ile aynı: Windows'un kayıtlı genişletme düzenini uygular. Sanal ekran bu bilgisayarda
+  // hiç bağlanmamışsa ChangeDisplaySettingsEx -1 (DISP_CHANGE_FAILED) dönebiliyor; bu, ekranı düzene ekler.
+  public static int Extend() { return SetDisplayConfig(0, IntPtr.Zero, 0, IntPtr.Zero, 0x80 /*SDC_APPLY*/ | 0x4 /*SDC_TOPOLOGY_EXTEND*/); }
 
   const int ATTACHED = 0x1, PRIMARY = 0x4;
   const int DM_POSITION = 0x20, DM_PELSWIDTH = 0x80000, DM_PELSHEIGHT = 0x100000, DM_DISPLAYFREQUENCY = 0x400000;
@@ -115,6 +120,7 @@ switch ($Action) {
     $px = if ($X -ne -99999) { $X } elseif ($attached -and $mode) { $mode[3] } else { [VirtualDisplay]::PrimaryRight() }
     $py = if ($X -ne -99999) { $Y } elseif ($attached -and $mode) { $mode[4] } else { $Y }
     $r = [VirtualDisplay]::Apply($name, $Width, $Height, $Hz, $px, $py)
+    if ($r -ne 0 -and -not $attached) { $state.extend = [VirtualDisplay]::Extend(); Start-Sleep -Milliseconds 1500; $r = [VirtualDisplay]::Apply($name, $Width, $Height, $Hz, $px, $py) }
     $state.result = $r
     $state.ok = ($r -eq 0)
     $now = [VirtualDisplay]::Current($name)
@@ -134,6 +140,8 @@ switch ($Action) {
       if ($X -eq -99999) { $X = [VirtualDisplay]::PrimaryRight() }
       $r = [VirtualDisplay]::Apply($name, $Width, $Height, $Hz, $X, $Y)
       if ($r -ne 0 -and $Hz -gt 0) { $r = [VirtualDisplay]::Apply($name, $Width, $Height, 0, $X, $Y) } # hız desteklenmezse varsayılanla dene
+      if ($r -ne 0) { $state.extend = [VirtualDisplay]::Extend(); Start-Sleep -Milliseconds 1500; $r = [VirtualDisplay]::Apply($name, $Width, $Height, $Hz, $X, $Y) } # ilk bağlama: Win+P Genişlet, sonra yeniden dene
+      if ($r -ne 0 -and $Hz -gt 0) { $r = [VirtualDisplay]::Apply($name, $Width, $Height, 0, $X, $Y) }
       $state.result = $r
       $state.ok = ($r -eq 0)
       $now = [VirtualDisplay]::Current($name)

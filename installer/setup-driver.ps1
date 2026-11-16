@@ -78,7 +78,8 @@ public static class RootDevice {
 "@
 
 function Get-VddDevices {
-  Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object {
+  # Yalnızca ekran sınıfı: tüm aygıtları tek tek sorgulamak kurulumu ~1 dk uzatıyordu.
+  Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Where-Object {
     try { (Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName DEVPKEY_Device_HardwareIds -ErrorAction Stop).Data -contains $hardwareId } catch { $false }
   }
 }
