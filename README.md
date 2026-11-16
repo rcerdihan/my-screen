@@ -165,3 +165,7 @@ Electron/WebRTC tabanlı ilk sürüm (~48 fps) `webrtc-stabil` etiketinde duruyo
 ## Üçüncü taraf bileşenler
 
 Kurulum FFmpeg (LGPL v3) ve Virtual Display Driver (MIT) içerir; ayrıntılar [THIRD_PARTY.md](THIRD_PARTY.md) dosyasında.
+
+## Lisans
+
+My Screen [MIT lisansı](LICENSE) ile dağıtılır.

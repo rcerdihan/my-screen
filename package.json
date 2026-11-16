@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "Android telefonu Wi-Fi etkin nokta veya USB üzerinden ikinci ekran olarak kullan",
   "main": "src/main.js",
-  "private": true,
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win nsis --x64"
@@ -80,5 +79,7 @@
       "include": "installer/installer.nsh",
       "artifactName": "MyScreen-Setup-${version}.${ext}"
     }
-  }
+  },
+  "license": "MIT",
+  "private": true
 }
