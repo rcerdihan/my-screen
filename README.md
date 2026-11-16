@@ -1,120 +1,167 @@
-# My Screen
+<p align="center"><img src="docs/icon-64.png" width="64" height="64" alt=""></p>
 
-**İndir:** https://rcerdihan.github.io/my-screen/ · [Son sürüm](https://github.com/rcerdihan/my-screen/releases/latest)
+<h1 align="center">My Screen</h1>
 
-Android telefonu Windows bilgisayarın ikinci ekranı olarak kullanır. Görüntü Wi-Fi etkin nokta veya USB kablo üzerinden, internete çıkmadan doğrudan telefona akar. Telefonda uygulama kurmak gerekmez; tarayıcı yeterlidir (Samsung Internet önerilir).
+<p align="center">
+  Android telefonunu veya tabletini Windows bilgisayarının <b>gerçek ikinci ekranı</b> yap.<br>
+  Cihaza uygulama kurmadan, tarayıcıdan, Wi-Fi ya da USB üzerinden, 120 fps'e kadar.
+</p>
 
-Ekran ffmpeg ile doğrudan Windows'tan (Desktop Duplication) yakalanır, NVIDIA NVENC (yoksa Intel Quick Sync) ile H.264'e kodlanır ve telefonda donanımla (WebCodecs) çözülür. Gönderilen kare hızı sanal ekranın yenileme hızıyla sınırlanır (A36: 120, Tab S6: 60).
+<p align="center">
+  <a href="https://rcerdihan.github.io/my-screen/"><b>İndirme sayfası</b></a> ·
+  <a href="https://github.com/rcerdihan/my-screen/releases/latest">Son sürüm</a> ·
+  <a href="#hızlı-başlangıç">Hızlı başlangıç</a> ·
+  <a href="#sorun-giderme">Sorun giderme</a>
+</p>
 
-İki ekran kartlı dizüstülerde sanal ekranı NVIDIA kartına ayarlamak (`vdd_settings.xml` → `<friendlyname>NVIDIA …</friendlyname>`) kareleri kopyalamadan kodlamayı sağlar; Intel kartta 2560×1600'de ~40 fps'te tıkanıyordu, NVIDIA'da sabit 60 fps ölçüldü.
+---
 
-## Kurulum (paylaşmak için)
+## Özellikler
 
-`MyScreen-Setup-<sürüm>.exe` tek dosyadır: uygulamayı, ffmpeg'i (LGPL) ve Virtual Display Driver'ı (imzalı) içerir. Çalıştıran kişi bir kez yönetici onayı verir; kurulum:
+- **Gerçek ikinci monitör:** Windows cihazı ayrı bir ekran olarak görür, masaüstü genişler. Sanal ekran uygulama açılınca bağlanır, kapanınca kaybolur.
+- **Akıcı görüntü:** Ekran, kopyalanmadan ekran kartında (NVIDIA NVENC, yoksa Intel Quick Sync) H.264'e kodlanır ve cihazda donanımla çözülür. Cihazın yenileme hızında akar (telefonda 120, tablette 60 fps ölçüldü).
+- **Uygulama gerekmez:** Cihazda tarayıcı yeterli. QR kodu okut, sayfayı ana ekrana ekle.
+- **Otomatik ayar:** Bağlanan cihazın çözünürlüğünü ve yenileme hızını algılar, sanal ekranı ona göre ayarlar.
+- **Dokunmatik kontrol:** Dokun = tık, sürükle = sürükle, basılı tut = sağ tık, iki parmak = kaydırma. Paint gibi uygulamalarda el yazısı akıcı çıkar.
+- **Yalnızca yerel ağ:** Görüntü internete çıkmaz. Bağlantı şifreli (HTTPS/WSS), yalnızca özel ağ adreslerinden ve QR koddaki gizli anahtarla kabul edilir.
+- **Tek dosya kurulum:** Uygulama, ffmpeg ve sanal ekran sürücüsü tek bir `MyScreen-Setup.exe` içinde gelir.
 
-- uygulamayı Program Files'a kurar, Başlat menüsü ve masaüstü kısayolu ekler,
-- sanal ekran sürücüsünü kurar (bilgisayarda zaten bir Virtual Display Driver varsa dokunmaz),
-- `C:\VirtualDisplayDriver` ayar klasörünü hazırlar ve kullanıcılara yazma izni verir,
-- güvenlik duvarına uygulama için yalnızca yerel ağ adreslerinden gelen bağlantı izni ekler.
+## Hızlı başlangıç
 
-Kaldırınca güvenlik duvarı kuralı silinir; sürücü yalnızca bu kurulum kurduysa kaldırılır. Kurulum günlüğü: `%ProgramData%\MyScreen\setup.log`.
+1. [**MyScreen-Setup.exe**'yi indir](https://github.com/rcerdihan/my-screen/releases/latest/download/MyScreen-Setup.exe) ve çalıştır.
+   Windows "bilgisayarınızı korudu" derse **Ek bilgi → Yine de çalıştır**, sonra yönetici onayı ver (dosya imzasız).
+2. **My Screen**'i Başlat menüsünden aç.
+3. Cihazı bağla:
+   - **Wi-Fi etkin nokta:** Uygulamada "Etkin nokta ayarlarını aç" → Windows mobil etkin noktasını aç (5 GHz önerilir) → cihazı bu ağa bağla.
+   - **USB:** Cihazı kabloyla tak → cihazda Ayarlar → Bağlantılar → Mobil etkin nokta ve tethering → **USB tethering**.
+4. Pencerede çıkan **QR kodu** cihazla okut (Samsung'da Samsung Internet, diğerlerinde Chrome).
+5. İlk seferde "bağlantı gizli değil" uyarısında **Gelişmiş → Yine de devam et** (sertifikayı uygulama bilgisayarında kendisi üretir).
+6. **Tam ekran başlat**'a dokun. Pencereleri laptop ekranının kenarından cihaza sürükle ya da `Win + Shift + ←/→` ile taşı.
 
-Kurulum dosyası imzasız olduğu için Windows "bilgisayarınızı korudu" uyarısı gösterir: **Ek bilgi → Yine de çalıştır**.
+Adres ve QR kod her açılışta aynıdır; sayfayı cihazın ana ekranına ekleyip sonraki sefer tek dokunuşla açabilirsin.
 
-### Kurulum dosyasını üretme
-1. `vendor\ffmpeg\` içine BtbN `ffmpeg-n9.0-latest-win64-lgpl-shared` arşivinin `bin\` içeriğini koy (ffplay/ffprobe gerekmez).
-2. `vendor\vdd\` içine Virtual Display Driver'ın `MttVDD.inf`, `MttVDD.dll`, `mttvdd.cat` ve `LICENSE.txt` dosyalarını koy.
-3. `npm install`, sonra `npm run dist` → `dist\MyScreen-Setup-<sürüm>.exe`.
+## Gereksinimler
 
-## Gereksinimler (geliştirme)
+| | |
+|---|---|
+| Bilgisayar | Windows 10/11, 64 bit; NVIDIA veya Intel ekran kartı |
+| Cihaz | Android telefon/tablet; Samsung Internet veya güncel Chrome |
+| Bağlantı | Bilgisayarda mobil etkin nokta ya da cihazda USB tethering |
 
-- Windows 10/11, Node.js
-- ffmpeg: `winget install Gyan.FFmpeg` (uygulama yolu kendisi bulur; başka bir yer için `MYSCREEN_FFMPEG` ortam değişkeni)
-- İkinci ekran için bir sanal ekran sürücüsü (aşağıda)
+**Bilinen sınırlar:** AMD ekran kartları henüz desteklenmiyor · iPhone/iPad denenmedi (Safari'de bağlantı sorunları olabilir) · kalem basıncı yok · aynı anda tek cihaz bağlanabilir.
 
-## Çalıştırma
+## Kullanım
 
-`start.bat` dosyasına çift tıkla (veya klasörde `npm install`, sonra `npm start`).
+Kontrol panelindeki ayarlar:
 
-Başlat menüsüne kısayol eklemek için (masaüstüne de eklemek istersen sonuna `-Desktop` ekle):
+| Ayar | Ne yapar |
+|---|---|
+| **Cihaz** | *Otomatik* (bağlanan cihaza göre) ya da hazır profil: Galaxy A36 (2340×1080 @ 120 Hz), Galaxy Tab S6 (2560×1600 @ 60 Hz). Yeni bir çözünürlükte sürücü bir kez yeniden yüklenir, sanal ekran birkaç saniye kaybolup geri gelir. |
+| **Sanal ekranın konumu** | Windows'ta laptop ekranının sağında ya da solunda. Cihazı masada nereye koyduysan onu seç. |
+| **Gönderilecek ekran** | Varsayılan sanal ekran; istersen laptop ekranını yansıtabilirsin. |
+| **Kalite** | 15–60 Mbps. Gerçek kullanım genelde 5–30 Mbps. |
+| **Dokunmatik kontrol** | Cihazdan fareyi kontrol etmeyi açar/kapatır. |
+| **Sanal ekranı uygulamayla birlikte aç ve kapat** | Kapatırsan sanal ekran uygulama kapalıyken de kalır. |
+| **Bağlantıyı kes** | Cihazın bağlantısını keser; cihazda "Yeniden bağlan" düğmesi çıkar. |
 
-```
-powershell -ExecutionPolicy Bypass -File scripts\create-shortcut.ps1
-```
-
-Uygulama zaten açıkken kısayola tıklamak yeni kopya açmaz, mevcut pencereyi öne getirir. Simge `scripts\make-icon.ps1` ile üretilir.
-
-İlk açılışta Windows Güvenlik Duvarı izin sorarsa **hem özel hem ortak ağlar** için izin ver; yoksa telefon bağlanamaz.
-
-## Telefonu bağlama
-
-### Wi-Fi etkin nokta
-1. Uygulamada "Etkin nokta ayarlarını aç"a bas ve Windows mobil etkin noktasını aç (bant: 5 GHz önerilir).
-2. Telefonu bu etkin noktanın Wi-Fi ağına bağla.
-3. Uygulamadaki "Wi-Fi etkin nokta" kartında çıkan QR kodu telefonla okut.
-
-Windows, bilgisayarın kendisinde hiçbir bağlantı yokken etkin noktayı açmayabilir. O durumda USB yolunu kullan.
-
-### USB kablo
-1. Telefonu kabloyla bilgisayara tak.
-2. Telefonda: Ayarlar → Bağlantılar → Mobil etkin nokta ve tethering → **USB tethering**'i aç.
-3. Uygulamadaki "USB kablo" kartında çıkan QR kodu okut.
-
-USB tethering açıkken bilgisayar telefonun internetini de kullanabilir. Mobil veri harcanmasın istiyorsan telefonda mobil veriyi kapat; ekran yayını bundan etkilenmez.
-
-### Sertifika uyarısı
-Sayfa HTTPS ile açılır (telefon tarayıcısı görüntü çözmeyi yalnızca güvenli bağlantıda açar). Sertifikayı uygulama ilk açılışta bu bilgisayarda üretir, bu yüzden telefon bir kez "bağlantı gizli değil" uyarısı verir: **Gelişmiş → Yine de devam et**.
-
-Adres ve QR kod her açılışta aynıdır; sayfayı ana ekrana ekleyip sonraki sefer doğrudan açabilirsin. Eski `http://…:8787` kısayolları yeni adrese yönlendirilir.
-
-## Telefonda kullanım
-
-- "Tam ekran başlat"a dokun; ekran yatay moda geçer.
-- Dokun: tık. Sürükle: sürükleme. Basılı tut: sağ tık. İki parmak: kaydırma.
-- Dokunmatik kontrolü PC'deki panelden kapatabilirsin.
-- Adrese `&hud` eklersen telefonda anlık fps ve çözme süresi görünür.
-
-Kare hızı ekrandaki harekete göre değişir: ekran dururken kare gönderilmez, hızlı hareket ve videolarda 120 fps'in üstüne çıkabilir.
-
-## Gerçek ikinci ekran (masaüstünü genişletme)
-
-Sanal monitör yokken uygulama ana ekranı yansıtır. Telefonu ayrı bir monitör gibi kullanmak için:
-
-1. **Virtual Display Driver**'ı kur: `winget install VirtualDrivers.Virtual-Display-Driver`, ardından "VDD Control" uygulamasında **Install**.
-2. Telefonun çözünürlüğünü `C:\VirtualDisplayDriver\vdd_settings.xml` içine ekle (ör. Galaxy A36 için 2340×1080), sürücüyü yeniden başlat (yönetici): `pnputil /restart-device "ROOT\DISPLAY\0000"`.
-3. `Win + P` → Genişlet; Ayarlar → Ekran'da sanal ekranı 2340×1080 @ 120 Hz yap.
-4. My Screen sanal ekranı kendiliğinden seçer.
-
-### Cihaz seçimi
-Paneldeki **Cihaz** listesinden bağlayacağın cihazı seç; sanal ekran o cihazın ekranına göre ayarlanır:
-
-| Cihaz | Çözünürlük | Yenileme |
-|---|---|---|
-| Galaxy A36 (telefon) | 2340×1080 | 120 Hz |
-| Galaxy Tab S6 (tablet) | 2560×1600 | 60 Hz |
-
-Çözünürlük sürücünün ayar dosyasında yoksa uygulama ekler ve sürücüyü yeniden yükletir (yönetici izni gerekmez); bu sırada sanal ekran birkaç saniye kaybolup geri gelir. Yeni cihaz eklemek için `src/main.js` içindeki `DEVICES` listesine bir satır eklemek yeterli.
-
-**Otomatik** seçeneğinde bağlanan cihazın sayfası ekranının çözünürlüğünü ve ölçtüğü yenileme hızını bildirir; sanal ekran buna göre ayarlanır (yeni bir çözünürlükte sürücü bir kez yeniden yüklenir). Tarayıcının "masaüstü sürümü" açıkken cihaz sahte bir ekran boyutu bildirdiği için otomatik ayar yapılmaz. Tarayıcının bildirdiği değer panelde görünür; cihazın gerçek panel çözünürlüğünden farklıysa elle profil seç.
-
-My Screen açılınca sanal ekranı masaüstüne bağlar, kapanınca ayırır (son çözünürlük/hız/konum hatırlanır; yönetici izni gerekmez). Bunu paneldeki "Sanal ekranı uygulamayla birlikte aç ve kapat" kutusuyla kapatabilirsin. Uygulama çökerse ya da Görev Yöneticisi'nden sonlandırılırsa sanal ekran açık kalır; bir sonraki açılış/kapanışta düzelir, ya da `Win + P` → "Yalnızca bilgisayar ekranı".
-
-Pencereler varsayılan olarak ana ekranda açılır; `Win + Shift + →` ile telefona taşı. Ayarlar → Kişiselleştirme → Görev çubuğu → "Görev çubuğumu tüm ekranlarda göster" kullanışlıdır.
+Panelde canlı kare hızı, bit hızı ve kodlayıcı görünür. Cihazda adresin sonuna `&hud` eklersen anlık çizilen kare ve çözme süresi gösterilir.
 
 ## Sorun giderme
 
-- **Telefon etkin noktada "internet yok" diyor:** Hyper-V/WSL/Docker ağı Windows'un internet paylaşımını kendine bağlamış olabilir. Etkin noktayı kapat, yönetici PowerShell'de `Restart-Service hns -Force` çalıştır, etkin noktayı yeniden aç.
-- **Sayfa telefonda açılmıyor (`ERR_TOO_MANY_RETRIES` vb.):** Başka bir tarayıcı dene (ör. Samsung Internet). Tarayıcı VPN'i, veri tasarrufu veya reklam engelleyici yerel adreslere erişimi kesebilir.
-- **Görüntü gelmiyor:** Paneldeki hata satırına bak (ffmpeg yok, ekran bulunamadı vb.). Ayrıntılar `%APPDATA%\my-screen\stats.log` dosyasında.
-- **İstek PC'ye ulaşıyor mu:** Paneldeki "Son istek" satırı ve `%APPDATA%\my-screen\requests.log` dosyası telefondan gelen her bağlantıyı gösterir.
+<details>
+<summary><b>Kare hızı düşük ya da 30'a kilitli</b></summary>
 
-Eski (Electron/WebRTC, ~48 fps) sürüm git'te `webrtc-stabil` etiketiyle duruyor.
+- Laptopu **prize tak**: pilde Windows ve tarayıcılar kare hızını yarıya düşürebiliyor.
+- İki ekran kartlı dizüstülerde, ikinci ekranda video oynatan tarayıcıyı **Ayarlar → Sistem → Ekran → Grafik** bölümünden "Yüksek performans" karta al.
+- Sanal ekran sürücüsünü NVIDIA kartına ayarlamak kareleri kopyalamadan kodlamayı sağlar: `C:\VirtualDisplayDriver\vdd_settings.xml` içinde `<friendlyname>` değerini ekran kartının adı yap (ör. `NVIDIA GeForce RTX 3060 Laptop GPU`), sonra cihaz profilini yeniden seç.
+- Maç yayınları gibi videolar saniyede 50 (bazı bölümlerde 25) kare çekilmiş olabilir; ekranda değişmeyen kare gönderilmez.
+</details>
 
-## Yapı
+<details>
+<summary><b>Etkin noktaya bağlanınca "internet yok" diyor</b></summary>
 
-- `src/main.js` — Electron ana süreç: HTTPS/WebSocket sunucusu, sertifika, ağ arayüzü algılama, QR, fare girdisi
-- `src/native.js` — ffmpeg ile yakalama ve kodlama, kareleri telefona gönderme
-- `src/host/` — PC kontrol paneli
-- `src/client/` — telefonda açılan sayfa: kareleri çözer ve çizer, dokunuşları gönderir
-- `src/input-helper.ps1` — fareyi hareket ettiren yardımcı süreç
-- `src/display-helper.ps1` — sanal ekranı masaüstüne bağlayan/ayıran yardımcı
+Görüntü için internet gerekmez. Bilgisayarda Hyper-V/WSL/Docker varsa bunların ağı Windows'un internet paylaşımını kendine bağlamış olabilir: etkin noktayı kapat, yönetici PowerShell'de `Restart-Service hns -Force` çalıştır, etkin noktayı yeniden aç. Ya da USB tethering kullan.
+</details>
+
+<details>
+<summary><b>Sayfa cihazda açılmıyor (ERR_TOO_MANY_RETRIES vb.)</b></summary>
+
+Başka bir tarayıcı dene (bazı telefonlarda Chrome yerel adrese bağlanamıyor, Samsung Internet bağlanıyor). Tarayıcı VPN'i, veri tasarrufu ya da reklam engelleyici yerel adreslere erişimi kesebilir. Paneldeki "Son istek" satırı cihazdan bilgisayara bir istek ulaşıp ulaşmadığını gösterir.
+</details>
+
+<details>
+<summary><b>Otomatik mod yanlış çözünürlük seçiyor</b></summary>
+
+Tarayıcının **masaüstü sürümü** açıksa cihaz sahte bir ekran boyutu bildirir; uygulama bu durumda ayar yapmaz ve cihazda uyarı gösterir. Tarayıcı menüsünden kapat. Cihazın bildirdiği değer panelde görünür; beğenmezsen hazır profil seç.
+</details>
+
+<details>
+<summary><b>Pencereler hep ana ekranda açılıyor</b></summary>
+
+Bu Windows davranışı. `Win + Shift + ←/→` ile pencereyi cihaza taşı; çoğu uygulama son kapandığı ekranı hatırlar. Ayarlar → Kişiselleştirme → Görev çubuğu → "Görev çubuğumu tüm ekranlarda göster" da işe yarar.
+</details>
+
+<details>
+<summary><b>Uygulama çöktü, sanal ekran kaldı</b></summary>
+
+`Win + P` → "Yalnızca bilgisayar ekranı". Uygulamayı bir sonraki açıp kapatışta da düzelir.
+</details>
+
+**Günlükler:** kurulum `%ProgramData%\MyScreen\setup.log`, yayın ölçümleri `%APPDATA%\my-screen\stats.log`, cihaz bağlantıları `%APPDATA%\my-screen\requests.log`. Sorun bildirirken bunları ekle.
+
+## Nasıl çalışır?
+
+```
+ Windows                                                     Cihaz (tarayıcı)
+ ┌───────────────────────────────────────────────┐          ┌──────────────────────────┐
+ │ Virtual Display Driver  →  sanal monitör       │          │                          │
+ │        │                                       │  H.264   │ WebCodecs (donanım)      │
+ │ ffmpeg ddagrab (Desktop Duplication)           │ ───────► │   → <video> katmanı      │
+ │        → NVENC / Quick Sync, kopyasız          │  WSS     │                          │
+ │ Electron: HTTPS + WebSocket sunucusu, panel    │ ◄─────── │ dokunuşlar → fare        │
+ │        ← SendInput (fare)                      │          │                          │
+ └───────────────────────────────────────────────┘          └──────────────────────────┘
+```
+
+- Sanal ekran [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) ile oluşturulur; uygulama çözünürlüğü, yenileme hızını ve konumu kendisi ayarlar (gerekirse sürücüyü yönetici izni olmadan yeniden yükletir).
+- ffmpeg sanal ekranı, bulunduğu ekran kartında yakalar ve aynı kartta kodlar. Saniye, ekranın yenileme hızı kadar dilime bölünür ve her dilimden en fazla bir kare gönderilir.
+- Kareler HTTPS sayfasına WebSocket ile gider; cihaz WebCodecs ile çözüp `MediaStreamTrackGenerator` ile bir `<video>` öğesinde gösterir (desteklenmezse tuval).
+- Dokunuşlar WebSocket üzerinden geri gelir ve `SendInput` ile gerçek fare girdisine çevrilir.
+
+## Geliştirme
+
+**Kaynaktan çalıştırma**
+
+```bash
+npm install
+npm start
+```
+
+ffmpeg'i `vendor\ffmpeg\` klasöründe, kurulu bir Gyan.FFmpeg paketinde ya da `PATH`'te arar (`MYSCREEN_FFMPEG` ortam değişkeniyle de verilebilir). Sanal ekran için Virtual Display Driver kurulu olmalı (`winget install VirtualDrivers.Virtual-Display-Driver`, ardından VDD Control → Install). Geliştirme kopyası için Başlat menüsü kısayolu: `powershell -ExecutionPolicy Bypass -File scripts\create-shortcut.ps1`.
+
+**Kurulum dosyasını üretme**
+
+1. `vendor\ffmpeg\` içine [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases) `ffmpeg-n9.0-latest-win64-lgpl-shared` arşivinin `bin\` içeriğini koy (ffplay/ffprobe gerekmez).
+2. `vendor\vdd\` içine Virtual Display Driver'ın `MttVDD.inf`, `MttVDD.dll`, `mttvdd.cat` ve `LICENSE.txt` dosyalarını koy.
+3. `npm run dist` → `dist\MyScreen-Setup-<sürüm>.exe`.
+
+Kurulum (`installer/setup-driver.ps1`, yönetici olarak) sürücüyü kurar (bilgisayarda zaten bir Virtual Display Driver varsa dokunmaz), `C:\VirtualDisplayDriver` ayar klasörünü hazırlayıp kullanıcılara yazma izni verir ve güvenlik duvarına yalnızca yerel ağ adreslerinden izin ekler. Kaldırınca güvenlik duvarı kuralı silinir; sürücü yalnızca kurulum kurduysa kaldırılır.
+
+**Proje yapısı**
+
+| Yol | İçerik |
+|---|---|
+| `src/main.js` | Electron ana süreç: HTTPS/WebSocket sunucusu, sertifika, ağ algılama, QR, cihaz profilleri, sanal ekran yönetimi |
+| `src/native.js` | ffmpeg ile yakalama ve kodlama, kare sınırlama, kareleri cihaza gönderme |
+| `src/host/` | Kontrol paneli |
+| `src/client/` | Cihazda açılan sayfa: çözme, gösterme, dokunmatik |
+| `src/display-helper.ps1` | Sanal ekranı bağlama/ayırma, mod ve konum değiştirme |
+| `src/input-helper.ps1` | Dokunuşları fare girdisine çeviren yardımcı |
+| `installer/` | Kurulum betiği, NSIS eklentisi, varsayılan sürücü ayarı |
+| `docs/` | İndirme sayfası (GitHub Pages) |
+
+Electron/WebRTC tabanlı ilk sürüm (~48 fps) `webrtc-stabil` etiketinde duruyor.
+
+## Üçüncü taraf bileşenler
+
+Kurulum FFmpeg (LGPL v3) ve Virtual Display Driver (MIT) içerir; ayrıntılar [THIRD_PARTY.md](THIRD_PARTY.md) dosyasında.
