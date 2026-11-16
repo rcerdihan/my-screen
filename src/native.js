@@ -21,7 +21,7 @@ function limiter(fps) {
 function grab(output, fps) {
   return `ddagrab=output_idx=${output}:framerate=240:dup_frames=0:draw_mouse=1,${limiter(fps)}`;
 }
-const NVENC = (mbps) => ['-c:v', 'h264_nvenc', '-preset', 'p1', '-tune', 'ull', '-zerolatency', '1', '-aud', '1', ...rate(mbps), '-fps_mode', 'passthrough'];
+const NVENC = (mbps) => ['-c:v', 'h264_nvenc', '-preset', 'p1', '-tune', 'ull', '-zerolatency', '1', '-aud', '1', '-profile:v', 'high', ...rate(mbps), '-fps_mode', 'passthrough'];
 const CHAINS = {
   nvidia: [{ name: 'NVIDIA NVENC (kopyasız)', filter: (o, fps) => grab(o, fps), args: (mbps) => NVENC(mbps) }],
   other: [
@@ -30,7 +30,7 @@ const CHAINS = {
       name: 'Intel Quick Sync',
       filter: (o, fps) => `${grab(o, fps)},hwmap=derive_device=qsv,format=qsv`,
       // Quick Sync 120'nin üstündeki kare hızını kabul etmiyor.
-      args: (mbps, fps) => ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-async_depth', '2', '-look_ahead', '0', '-aud', '1', ...rate(mbps), '-r', String(Math.min(120, fps))],
+      args: (mbps, fps) => ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-async_depth', '2', '-look_ahead', '0', '-aud', '1', '-profile:v', 'high', ...rate(mbps), '-r', String(Math.min(120, fps))],
     },
   ],
 };
@@ -89,6 +89,34 @@ function probeOutput(ffmpeg, adapter, output) {
       }
     );
   });
+}
+
+// H.264 seviyesi (level_idc) için gerçek değer. Kodlayıcı, yakalayıcının bildirdiği 240 kare/sn'ye
+// bakıp 6.0 yazıyor; ama gönderilen kare hızı ekranın yenileme hızıyla sınırlı olduğu için akış
+// aslında 5.x sınırlarında. Bazı Android çözücüleri (ör. Honor 90) 6.0 görünce görüntüyü açmıyordu.
+const LEVELS = [
+  // [level_idc, saniyede makro blok, kare başına makro blok]
+  [41, 245760, 8192],
+  [42, 522240, 8704],
+  [50, 589824, 22080],
+  [51, 983040, 36864],
+  [52, 2073600, 36864],
+  [60, 4177920, 139264],
+];
+function levelFor(width, height, fps) {
+  const fs = Math.ceil(width / 16) * Math.ceil(height / 16);
+  const rate = fs * fps;
+  const hit = LEVELS.find(([, mbps, maxFs]) => rate <= mbps && fs <= maxFs);
+  return hit ? hit[0] : 62;
+}
+// Erişim birimindeki SPS'in level_idc baytını değiştir (NAL başlığı + profil + kısıtlar + seviye).
+function patchSpsLevel(au, level) {
+  for (let i = 0; i + 6 < au.length; i++) {
+    if (au[i] === 0 && au[i + 1] === 0 && au[i + 2] === 1 && (au[i + 3] & 0x1f) === 7) {
+      if (au[i + 6] > level) au[i + 6] = level;
+      return;
+    }
+  }
 }
 
 function nalTypes(au) {
@@ -159,6 +187,7 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
     if (!socket || socket.readyState !== 1) return;
     const types = nalTypes(au);
     const key = types.has(5) || types.has(7);
+    if (types.has(7) && display) patchSpsLevel(au, levelFor(display.width, display.height, maxFps));
     if (waitingKey && !key) {
       stats.skipped++;
       return;
@@ -257,6 +286,13 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
         scheduleRestart('ffmpeg durdu', 1500);
       }
     });
+    // İlk kare hiç gelmezse sebebi panelde ve cihazda görünsün.
+    setTimeout(() => {
+      if (myGeneration !== generation || !socket || !waitingKey) return;
+      const why = errText.replace(/s+/g, ' ').trim().slice(-200);
+      log(`yerel ilk kare gelmedi kodlayici=${encoder.name} kart=${target.adapter} cikis=${target.output} ${why}`);
+      status('error', `ilk görüntü 8 saniyede gelmedi (${encoder.name}, ekran kartı ${target.adapter})${why ? ': ' + why : ''}`);
+    }, 8000);
     for (const delay of [500, 1500, 3000]) {
       setTimeout(() => {
         if (myGeneration === generation && socket && waitingKey) onNeedFrame();

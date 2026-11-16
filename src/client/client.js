@@ -128,7 +128,38 @@ function drawFrame(frame) {
   }
 }
 
-function createDecoder(codec) {
+// Cihazın çözücüsünün kabul ettiği ayarı bul. Bilgisayarın gönderdiği profil/seviye bazı
+// cihazlarda desteklenmeyebiliyor (ör. seviye 6.0); sırayla daha düşük seviyeler ve donanım
+// tercihi olmadan denenir. Hiçbiri olmazsa sebep ekranda yazılır.
+const configCache = new Map();
+async function pickConfig(codec) {
+  if (configCache.has(codec)) return configCache.get(codec);
+  const codecs = [codec, 'avc1.640034', 'avc1.640033', 'avc1.640028', 'avc1.4d0034', 'avc1.42e034'].filter((c, i, a) => a.indexOf(c) === i);
+  let found = null;
+  const tried = [];
+  for (const c of codecs) {
+    for (const hardwareAcceleration of ['prefer-hardware', 'no-preference']) {
+      const cfg = { codec: c, optimizeForLatency: true, hardwareAcceleration };
+      try {
+        const r = await VideoDecoder.isConfigSupported(cfg);
+        tried.push(`${c}/${hardwareAcceleration}:${r.supported ? 'evet' : 'hayir'}`);
+        if (r.supported) {
+          found = cfg;
+          break;
+        }
+      } catch (err) {
+        tried.push(`${c}/${hardwareAcceleration}:hata`);
+      }
+    }
+    if (found) break;
+  }
+  wsSend({ type: 'client-log', text: `cozucu secimi ${codec} -> ${found ? found.codec + '/' + found.hardwareAcceleration : 'YOK'} [${tried.join(' ')}]` });
+  configCache.set(codec, found);
+  return found;
+}
+
+let decodeErrors = 0;
+function createDecoder(cfg) {
   if (decoder && decoder.state !== 'closed') decoder.close();
   decoder = new VideoDecoder({
     output: (frame) => {
@@ -138,20 +169,33 @@ function createDecoder(codec) {
         sentAt.delete(frame.timestamp);
       }
       counters.decoded++;
+      decodeErrors = 0;
       drawFrame(frame);
     },
     error: (err) => {
       console.error(err);
+      decodeErrors++;
+      wsSend({ type: 'client-log', text: `cozucu hatasi (${decodeErrors}): ${err && err.message}` });
+      if (decodeErrors >= 3) {
+        show(`Görüntü çözülemiyor: ${err && err.message}. Bilgisayardaki stats.log dosyasını gönder.`, false);
+      }
       needKey = true;
       configuredCodec = '';
       wsSend({ type: 'key' });
     },
   });
-  decoder.configure({ codec, optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' });
-  configuredCodec = codec;
+  decoder.configure(cfg);
+  configuredCodec = cfg.sourceCodec;
 }
 
 let timestamp = 0;
+let configuring = false;
+function decodeChunk(key, data) {
+  timestamp += 1000;
+  sentAt.set(timestamp, performance.now());
+  if (sentAt.size > 300) sentAt.clear();
+  decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp, data }));
+}
 function onVideo(buf) {
   const view = new Uint8Array(buf);
   const key = view[0] === 1;
@@ -159,15 +203,26 @@ function onVideo(buf) {
   counters.received++;
   counters.bytes += data.length;
   if (needKey && !key) return;
+  if (configuring) return;
   if (key) {
     const codec = codecFromAnnexB(data);
     if (codec && (codec !== configuredCodec || !decoder || decoder.state === 'closed')) {
-      try {
-        createDecoder(codec);
-      } catch (err) {
-        show(`Çözücü açılamadı (${codec}): ${err.message}`, false);
-        return;
-      }
+      // Ayar seçimi eşzamansız; bu anahtar kareyi sakla ve ayar bulununca çöz.
+      configuring = true;
+      const keyData = data.slice();
+      pickConfig(codec)
+        .then((cfg) => {
+          if (!cfg) {
+            show(`Bu cihazın tarayıcısı görüntüyü çözemiyor (${codec}). Başka bir tarayıcı dene (Chrome, Samsung Internet).`, false);
+            return;
+          }
+          createDecoder({ ...cfg, sourceCodec: codec });
+          needKey = false;
+          decodeChunk(true, keyData);
+        })
+        .catch((err) => show(`Çözücü açılamadı (${codec}): ${err.message}`, false))
+        .finally(() => (configuring = false));
+      return;
     }
   }
   if (!decoder || decoder.state !== 'configured') return;
@@ -179,10 +234,7 @@ function onVideo(buf) {
     wsSend({ type: 'key' });
     return;
   }
-  timestamp += 1000;
-  sentAt.set(timestamp, performance.now());
-  if (sentAt.size > 300) sentAt.clear();
-  decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp, data }));
+  decodeChunk(key, data);
 }
 
 // Otomatik mod için ekranın fiziksel çözünürlüğünü ve yenileme hızını bilgisayara bildir.
@@ -253,6 +305,8 @@ function connect() {
       stopAndOfferReconnect('Başka bir cihaz bağlandı.');
     } else if (msg.type === 'kicked') {
       stopAndOfferReconnect('Bağlantı bilgisayardan kesildi.');
+    } else if (msg.type === 'stream-error') {
+      if (counters.decoded === 0) show(`Bilgisayar görüntü üretemedi: ${msg.text}`, false);
     } else if (msg.type === 'error') {
       show(msg.text, false);
     }

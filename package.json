@@ -1,6 +1,6 @@
 {
   "name": "my-screen",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Android telefonu Wi-Fi etkin nokta veya USB üzerinden ikinci ekran olarak kullan",
   "main": "src/main.js",
   "scripts": {

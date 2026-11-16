@@ -541,6 +541,7 @@ function onViewer(socket, ip) {
     else if (msg.type === 'stats') logStats(`telefon ${msg.line}`);
     else if (msg.type === 'key') streamer.requestKey();
     else if (msg.type === 'device-info') onDeviceInfo(msg);
+    else if (msg.type === 'client-log') logStats(`cihaz: ${String(msg.text).slice(0, 300)}`);
   });
   socket.on('close', () => {
     if (viewerSocket === socket) {
@@ -667,7 +668,11 @@ app.whenReady().then(async () => {
   lastDisplayKey = JSON.stringify(listDisplays());
   streamer = createNativeStreamer({
     log: logStats,
-    onStatus: (info) => win && win.webContents.send('stream-status', info),
+    onStatus: (info) => {
+      if (win) win.webContents.send('stream-status', info);
+      // Yayın hatasını cihaza da bildir; yoksa cihaz sebepsiz "Görüntü bekleniyor"da kalıyordu.
+      if (info.state === 'error') send(viewerSocket, { type: 'stream-error', text: info.text });
+    },
     onNeedFrame: nudgeDisplay,
     cache: config.nativeOutputs || {},
     saveCache: (map) => {
