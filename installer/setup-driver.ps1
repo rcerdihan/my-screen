@@ -37,7 +37,9 @@ public static class RootDevice {
   [DllImport("setupapi.dll", SetLastError = true)] static extern IntPtr SetupDiCreateDeviceInfoList(ref Guid classGuid, IntPtr hwnd);
   [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Unicode)]
   static extern bool SetupDiCreateDeviceInfo(IntPtr set, string name, ref Guid classGuid, string desc, IntPtr hwnd, int flags, ref SP_DEVINFO_DATA data);
-  [DllImport("setupapi.dll", SetLastError = true)]
+  // CharSet.Unicode şart: yoksa ...PropertyA çağrılır, UTF-16 kimlik "R" olarak kaydedilir ve
+  // aygıt "Unknown" kalır (0.1.0-0.1.3 hatası).
+  [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Unicode)]
   static extern bool SetupDiSetDeviceRegistryProperty(IntPtr set, ref SP_DEVINFO_DATA data, int prop, byte[] buf, int size);
   [DllImport("setupapi.dll", SetLastError = true)] static extern bool SetupDiCallClassInstaller(int fn, IntPtr set, ref SP_DEVINFO_DATA data);
   [DllImport("setupapi.dll", SetLastError = true)] static extern bool SetupDiDestroyDeviceInfoList(IntPtr set);
@@ -96,6 +98,15 @@ if ($Action -eq 'install') {
 
   # 2) Sürücü: zaten kurulu bir sanal ekran varsa ikinci bir tane ekleme.
   $inf = Join-Path $ResDir 'vdd\MttVDD.inf'
+  # Eski sürümlerin yanlış kimlikle ("R") oluşturduğu sürücüsüz aygıtları temizle.
+  Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -like 'ROOT\DISPLAY\*' } | ForEach-Object {
+    $ids = @(try { (Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName DEVPKEY_Device_HardwareIds -ErrorAction Stop).Data } catch { })
+    $ids = @($ids | Where-Object { $_ })
+    if ($_.Status -ne 'OK' -and ($ids.Count -eq 0 -or ($ids.Count -eq 1 -and $ids[0] -eq 'R'))) {
+      $o = & pnputil.exe /remove-device "$($_.InstanceId)" 2>&1 | Out-String
+      Log "bozuk aygit silindi $($_.InstanceId): $LASTEXITCODE $($o -replace '\s+', ' ')"
+    }
+  }
   $existing = @(Get-VddDevices)
   $working = @($existing | Where-Object { $_.Status -eq 'OK' })
   if ($working.Count -gt 0) {
