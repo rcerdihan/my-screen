@@ -101,7 +101,9 @@ function probeOutput(ffmpeg, adapter, output) {
       { windowsHide: true, timeout: 8000 },
       (err, stdout, stderr) => {
         const m = String(stderr).match(/Stream #0:0.*?Video:.*?(\d{3,5})x(\d{3,5})/);
-        resolve(m ? { width: Number(m[1]), height: Number(m[2]) } : null);
+        if (m) return resolve({ width: Number(m[1]), height: Number(m[2]) });
+        const last = String(stderr).trim().split(/\r?\n/).filter((l) => /error|fail|invalid|not/i.test(l) && !/Conversion failed/.test(l)).pop();
+        resolve({ error: (last || (err && err.message) || 'cikti yok').slice(0, 160) });
       }
     );
   });
@@ -167,6 +169,7 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
   let generation = 0;
 
   let probing = null;
+  let probedIds = []; // son yoklamada görülen ekran kartları (ör. 1002:15bf)
   // Önbellekteki değer: { adapter, output, vendor }. Eski sürümden kalan sayı değerler geçersiz sayılır.
   const valid = (v) => v && typeof v === 'object' && Number.isInteger(v.adapter) && Number.isInteger(v.output);
   // Electron'un boyutu (DIP × ölçek) yuvarlamadan dolayı gerçek boyuttan 1-2 px sapabiliyor
@@ -188,12 +191,16 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
     probing = new Promise((r) => (resolveProbe = r));
     try {
       const seen = new Set();
+      probedIds = [];
       outer: for (let adapter = 0; adapter < 4; adapter++) {
         const info = await probeAdapter(ffmpeg, adapter);
+        log(`yoklama kart=${adapter} ${info ? info.id + ' ' + info.vendor : 'yok'}`);
         if (!info) break;
+        probedIds.push(info.id);
         for (let output = 0; output < 6; output++) {
           const found = await probeOutput(ffmpeg, adapter, output);
-          if (!found) break;
+          log(`yoklama kart=${adapter} cikis=${output} ${found.error ? 'HATA ' + found.error : found.width + 'x' + found.height}`);
+          if (found.error) break;
           const k = `${found.width}x${found.height}`;
           if (seen.has(`${info.id}/${k}`)) continue; // aynı kart iki kez listelenebiliyor
           seen.add(`${info.id}/${k}`);
@@ -273,7 +280,12 @@ function createNativeStreamer({ log, onStatus, onNeedFrame = () => {}, cache = {
     const target = await findOutput();
     if (myGeneration !== generation || !socket) return;
     if (!target) {
-      status('error', `ffmpeg ${display.width}×${display.height} ekranını bulamadı`);
+      // Yalnızca Microsoft Basic Render Driver (1414) görünüyorsa gerçek ekran kartı kullanılamıyor:
+      // Uzak Masaüstü oturumu ya da kurulu olmayan ekran kartı sürücüsü. Ekran yakalama bu durumda çalışmaz.
+      const basicOnly = probedIds.length > 0 && probedIds.every((id) => id.startsWith('1414:'));
+      status('error', basicOnly
+        ? 'Ekran kartı kullanılamıyor (yalnızca Microsoft Basic Render Driver görünüyor). Uzak Masaüstü ile bağlıysan My Screen uygulamasını bilgisayarın kendi oturumunda aç; değilse ekran kartı sürücüsünü (AMD/NVIDIA/Intel) kur.'
+        : `ffmpeg ${display.width}×${display.height} ekranını bulamadı`);
       return;
     }
     const chain = CHAINS[target.vendor] || CHAINS.other;

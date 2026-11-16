@@ -205,6 +205,11 @@ function autoModeFrom(info) {
   let w = Math.round(Number(info.width)) || 0;
   let h = Math.round(Number(info.height)) || 0;
   if (h > w) [w, h] = [h, w]; // yatay kullanım
+  // Tarayıcı ekranı ölçekli birimle bildirir; Android'de "Ekran yakınlaştırma" değişince ölçüm
+  // gerçek boyutun biraz altında çıkar (A36: 2340x1080 yerine 2250x1012). Bilinen bir profile
+  // her boyutta %8'den yakınsa profilin gerçek çözünürlüğünü kullan.
+  const near = DEVICES.find((d) => Math.abs(w / d.width - 1) <= 0.08 && Math.abs(h / d.height - 1) <= 0.08);
+  if (near) [w, h] = [near.width, near.height];
   // Mantıklı sınırlar; sürücü çift sayılı boyutları sever.
   w = Math.min(3840, Math.max(800, w - (w % 2)));
   h = Math.min(2400, Math.max(480, h - (h % 2)));
