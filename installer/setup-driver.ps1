@@ -56,9 +56,21 @@ public static class RootDevice {
       if (!SetupDiSetDeviceRegistryProperty(set, ref data, 1 /*SPDRP_HARDWAREID*/, ids, ids.Length)) return "kimlik " + Marshal.GetLastWin32Error();
       if (!SetupDiCallClassInstaller(0x19 /*DIF_REGISTERDEVICE*/, set, ref data)) return "kaydet " + Marshal.GetLastWin32Error();
     } finally { SetupDiDestroyDeviceInfoList(set); }
-    bool reboot;
-    if (!UpdateDriverForPlugAndPlayDevices(IntPtr.Zero, hwid, inf, 1 /*INSTALLFLAG_FORCE*/, out reboot)) return "surucu " + Marshal.GetLastWin32Error();
-    return reboot ? "ok-yeniden-baslatma" : "ok";
+    return Bind(hwid, inf);
+  }
+
+  // Sürücüyü bu donanım kimliğindeki aygıtlara bağla. Yeni kaydedilen aygıt PnP'ye hemen
+  // görünmeyebiliyor (ERROR_NO_SUCH_DEVINST, -536870389); birkaç kez bekleyip yeniden dene.
+  public static string Bind(string hwid, string inf) {
+    int err = 0;
+    for (int i = 0; i < 10; i++) {
+      bool reboot;
+      if (UpdateDriverForPlugAndPlayDevices(IntPtr.Zero, hwid, inf, 1 /*INSTALLFLAG_FORCE*/, out reboot))
+        return reboot ? "ok-yeniden-baslatma" : "ok";
+      err = Marshal.GetLastWin32Error();
+      System.Threading.Thread.Sleep(1000);
+    }
+    return "surucu " + err;
   }
 }
 "@
@@ -83,16 +95,31 @@ if ($Action -eq 'install') {
   Log "ayar klasoru izni: $LASTEXITCODE"
 
   # 2) Sürücü: zaten kurulu bir sanal ekran varsa ikinci bir tane ekleme.
+  $inf = Join-Path $ResDir 'vdd\MttVDD.inf'
   $existing = @(Get-VddDevices)
-  if ($existing.Count -gt 0) {
-    Log "sanal ekran zaten var ($($existing.InstanceId -join ', ')), surucu kurulmadi"
+  $working = @($existing | Where-Object { $_.Status -eq 'OK' })
+  if ($working.Count -gt 0) {
+    Log "sanal ekran zaten var ($($working.InstanceId -join ', ')), surucu kurulmadi"
   } else {
-    $inf = Join-Path $ResDir 'vdd\MttVDD.inf'
     $out = & pnputil.exe /add-driver "$inf" /install 2>&1 | Out-String
     Log "pnputil add-driver: $LASTEXITCODE $($out -replace '\s+', ' ')"
-    $r = [RootDevice]::Create($hardwareId, $inf)
+    if ($existing.Count -gt 0) {
+      # Önceki kurulumdan kalan, sürücüsü bağlanmamış aygıt: yenisini ekleme, sürücüyü ona bağla.
+      Log "surucusuz aygit bulundu ($($existing.InstanceId -join ', ') durum=$($existing.Status -join ','))"
+      $r = [RootDevice]::Bind($hardwareId, $inf)
+    } else {
+      $r = [RootDevice]::Create($hardwareId, $inf)
+    }
     Log "kok aygit: $r"
-    if ($r -like 'ok*') { Set-Content -Path $marker -Value (Get-Date -Format o) -Encoding ASCII }
+    if ($r -notlike 'ok*') {
+      & pnputil.exe /scan-devices | Out-Null
+      Start-Sleep -Seconds 3
+    }
+    $after = @(Get-VddDevices)
+    Log "aygit durumu: $(($after | ForEach-Object { "$($_.InstanceId)=$($_.Status)" }) -join ', ')"
+    if ($r -like 'ok*' -or @($after | Where-Object { $_.Status -eq 'OK' }).Count -gt 0) {
+      Set-Content -Path $marker -Value (Get-Date -Format o) -Encoding ASCII
+    }
   }
 
   # 3) Güvenlik duvarı: telefon/tablet yerel ağdan bağlanabilsin (yalnızca özel ağ adresleri).
