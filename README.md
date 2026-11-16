@@ -63,6 +63,16 @@ Sanal monitör yokken uygulama ana ekranı yansıtır. Telefonu ayrı bir monit�
 3. `Win + P` → Genişlet; Ayarlar → Ekran'da sanal ekranı 2340×1080 @ 120 Hz yap.
 4. My Screen sanal ekranı kendiliğinden seçer.
 
+### Cihaz seçimi
+Paneldeki **Cihaz** listesinden bağlayacağın cihazı seç; sanal ekran o cihazın ekranına göre ayarlanır:
+
+| Cihaz | Çözünürlük | Yenileme |
+|---|---|---|
+| Galaxy A36 (telefon) | 2340×1080 | 120 Hz |
+| Galaxy Tab S6 (tablet) | 2560×1600 | 60 Hz |
+
+Çözünürlük sürücünün ayar dosyasında yoksa uygulama ekler ve sürücüyü yeniden yükletir (yönetici izni gerekmez); bu sırada sanal ekran birkaç saniye kaybolup geri gelir. Yeni cihaz eklemek için `src/main.js` içindeki `DEVICES` listesine bir satır eklemek yeterli.
+
 My Screen açılınca sanal ekranı masaüstüne bağlar, kapanınca ayırır (son çözünürlük/hız/konum hatırlanır; yönetici izni gerekmez). Bunu paneldeki "Sanal ekranı uygulamayla birlikte aç ve kapat" kutusuyla kapatabilirsin. Uygulama çökerse ya da Görev Yöneticisi'nden sonlandırılırsa sanal ekran açık kalır; bir sonraki açılış/kapanışta düzelir, ya da `Win + P` → "Yalnızca bilgisayar ekranı".
 
 Pencereler varsayılan olarak ana ekranda açılır; `Win + Shift + →` ile telefona taşı. Ayarlar → Kişiselleştirme → Görev çubuğu → "Görev çubuğumu tüm ekranlarda göster" kullanışlıdır.

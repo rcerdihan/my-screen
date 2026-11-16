@@ -25,6 +25,7 @@ let config = {
   nativeMbps: 30,
   nativeOutputs: {},
   manageVirtualDisplay: true, // sanal ekranı uygulama açılınca bağla, kapanınca ayır
+  device: 'galaxy-a36', // sanal ekranın hangi cihaza göre ayarlandığı (DEVICES)
   virtualMode: { width: 2340, height: 1080, hz: 120, x: -1, y: 0 }, // son kullanılan sanal ekran düzeni
 };
 let viewerSocket = null;
@@ -97,6 +98,79 @@ function onDisplaysChanged() {
   streamer.warmup(selectedPixelSize());
   streamer.restart(selectedPixelSize());
   if (win) win.webContents.send('displays', { displays: listDisplays(), selectedDisplayId: selectedDisplay().id });
+}
+
+// ---------- cihaz profilleri ----------
+// Sanal ekran bu çözünürlük ve yenileme hızına ayarlanır; görüntü cihazın ekranını tam doldurur.
+const DEVICES = [
+  { id: 'galaxy-a36', name: 'Galaxy A36 (telefon)', width: 2340, height: 1080, hz: 120 },
+  { id: 'galaxy-tab-s6', name: 'Galaxy Tab S6 (tablet)', width: 2560, height: 1600, hz: 60 },
+];
+const VDD_SETTINGS = 'C:\\VirtualDisplayDriver\\vdd_settings.xml';
+const VDD_PIPE = '\\\\.\\pipe\\MTTVirtualDisplayPipe';
+
+function runDisplayHelper(action, mode) {
+  return new Promise((resolve) => {
+    execFile('powershell.exe', displayHelperArgs(action, mode), { windowsHide: true, timeout: 20000 }, (err, stdout) => {
+      resolve(err ? { ok: false, error: err.message } : parseHelper(stdout));
+    });
+  });
+}
+
+// Çözünürlük sürücünün ayar dosyasında yoksa ekle (yenileme hızları dosyadaki genel listeden gelir).
+function addResolutionToDriver(width, height) {
+  const text = fs.readFileSync(VDD_SETTINGS, 'utf8');
+  const exists = new RegExp(`<width>${width}</width>\\s*<height>${height}</height>`).test(text);
+  if (exists) return false;
+  const entry = `        <resolution>\r\n            <width>${width}</width>\r\n            <height>${height}</height>\r\n            <refresh_rate>60</refresh_rate>\r\n        </resolution>\r\n    </resolutions>`;
+  fs.writeFileSync(VDD_SETTINGS, text.replace(/\s*<\/resolutions>/, `\r\n${entry}`), 'utf8');
+  return true;
+}
+
+// Sürücüye ayarları yeniden okut (yönetici izni gerekmez; VDD Control'ün kullandığı kanal).
+function reloadDriver() {
+  return new Promise((resolve) => {
+    const socket = require('net').connect(VDD_PIPE, () => {
+      socket.end(Buffer.from('RELOAD_DRIVER', 'utf16le'));
+    });
+    socket.on('error', (err) => resolve({ ok: false, error: err.message }));
+    socket.on('close', () => resolve({ ok: true }));
+    setTimeout(() => {
+      socket.destroy();
+      resolve({ ok: true });
+    }, 5000);
+  });
+}
+
+async function applyDevice(id) {
+  const device = DEVICES.find((d) => d.id === id);
+  if (!device) return { ok: false, error: 'Bilinmeyen cihaz' };
+  const want = `${device.width}x${device.height}@${device.hz}`;
+  let modes = await runDisplayHelper('modes');
+  if (!modes.found) return { ok: false, error: 'Sanal ekran sürücüsü bulunamadı' };
+  if (!(modes.modes || []).includes(want)) {
+    try {
+      addResolutionToDriver(device.width, device.height);
+    } catch (err) {
+      return { ok: false, error: `Sürücü ayar dosyası yazılamadı: ${err.message}` };
+    }
+    logStats(`surucu yeniden yukleniyor (${want} icin)`);
+    await reloadDriver();
+    // Sürücü yeniden yüklenince ekran birkaç saniye kaybolup geri geliyor.
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      modes = await runDisplayHelper('modes');
+      if ((modes.modes || []).includes(want)) break;
+    }
+    if (!(modes.modes || []).includes(want)) return { ok: false, error: `${want} modu sürücüde görünmedi` };
+  }
+  const result = await runDisplayHelper('set', { width: device.width, height: device.height, hz: device.hz, x: -1, y: 0 });
+  logStats(`cihaz ${device.id} uygulandi: ${JSON.stringify(result)}`);
+  if (!result.ok) return { ok: false, error: `Ekran ayarı uygulanamadı (kod ${result.result})` };
+  config.device = device.id;
+  config.virtualMode = { width: result.width, height: result.height, hz: result.hz, x: result.x, y: result.y };
+  saveConfig();
+  return { ok: true, mode: config.virtualMode };
 }
 
 // ---------- sanal ekranı aç/kapat ----------
@@ -517,6 +591,8 @@ app.whenReady().then(async () => {
       inputEnabled: config.inputEnabled,
       mbps: config.nativeMbps,
       manageVirtualDisplay: config.manageVirtualDisplay,
+      devices: DEVICES,
+      device: config.device,
       viewerIp: viewerSocket ? viewerSocket.myScreenIp : '',
       ffmpegAvailable: streamer.available,
       serverError,
@@ -540,6 +616,7 @@ app.whenReady().then(async () => {
     streamer.setBitrate(config.nativeMbps);
   });
   ipcMain.handle('disconnect-viewer', () => disconnectViewer());
+  ipcMain.handle('set-device', (e, id) => applyDevice(id));
   ipcMain.handle('set-manage-virtual-display', async (e, value) => {
     config.manageVirtualDisplay = !!value;
     saveConfig();

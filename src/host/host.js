@@ -116,6 +116,37 @@ disconnectBtn.onclick = async () => {
   statsEl.textContent = 'Telefonda "Yeniden bağlan"a dokununca yayın yeniden başlar.';
 };
 
+// ---------- cihaz (sanal ekran çözünürlüğü) ----------
+const deviceSelect = $('device');
+const deviceStatus = $('deviceStatus');
+let currentDevice = '';
+function renderDevices(devices, selected) {
+  deviceSelect.textContent = '';
+  for (const d of devices) {
+    const opt = document.createElement('option');
+    opt.value = d.id;
+    opt.textContent = `${d.name} — ${d.width}×${d.height} @ ${d.hz} Hz`;
+    deviceSelect.appendChild(opt);
+  }
+  deviceSelect.value = selected;
+  currentDevice = selected;
+}
+deviceSelect.onchange = async () => {
+  const id = deviceSelect.value;
+  deviceSelect.disabled = true;
+  deviceStatus.hidden = false;
+  deviceStatus.textContent = 'Sanal ekran ayarlanıyor… (ilk seferde sürücü yeniden yüklenir, ekran birkaç saniye kaybolabilir)';
+  const result = await api.setDevice(id);
+  deviceSelect.disabled = false;
+  if (result.ok) {
+    currentDevice = id;
+    deviceStatus.textContent = `Sanal ekran ${result.mode.width}×${result.mode.height} @ ${result.mode.hz} Hz yapıldı.`;
+  } else {
+    deviceSelect.value = currentDevice;
+    deviceStatus.textContent = `Ayarlanamadı: ${result.error}`;
+  }
+};
+
 // ---------- olaylar ----------
 displaySelect.onchange = () => api.selectDisplay(Number(displaySelect.value));
 mbpsSelect.onchange = () => api.setMbps(Number(mbpsSelect.value));
@@ -133,6 +164,7 @@ api.onDisplays(({ displays, selectedDisplayId }) => renderDisplays(displays, sel
   inputCheck.checked = state.inputEnabled;
   $('manageVirtual').checked = state.manageVirtualDisplay;
   showViewer(state.viewerIp);
+  renderDevices(state.devices, state.device);
   mbpsSelect.value = String(state.mbps || 30);
   renderDisplays(state.displays, state.selectedDisplayId);
   renderEntries(state.entries);

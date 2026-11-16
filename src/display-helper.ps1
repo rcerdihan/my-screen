@@ -3,6 +3,8 @@
 #   status                      -> sanal ekranın durumunu yazar
 #   attach W H HZ X Y           -> sanal ekranı bu çözünürlük/hız/konumla bağlar
 #   detach                      -> sanal ekranı ayırır (önce durumunu yazar)
+#   modes                       -> sürücünün sunduğu çözünürlük@hız listesini yazar
+#   set W H HZ                  -> bağlıyken çözünürlüğü/hızı değiştirir (bağlı değilse bağlar)
 # Çıktı: tek satır JSON.
 param([string]$Action = 'status', [int]$Width = 0, [int]$Height = 0, [int]$Hz = 0, [int]$X = -1, [int]$Y = 0)
 
@@ -55,6 +57,14 @@ public static class VirtualDisplay {
     return null;
   }
 
+  // Sürücünün sunduğu tüm modlar: "GxY@Hz" listesi.
+  public static string[] Modes(string name) {
+    var set = new System.Collections.Generic.SortedSet<string>();
+    var dm = NewMode();
+    for (int i = 0; EnumDisplaySettings(name, i, ref dm); i++) set.Add(dm.dmPelsWidth + "x" + dm.dmPelsHeight + "@" + dm.dmDisplayFrequency);
+    var arr = new string[set.Count]; set.CopyTo(arr); return arr;
+  }
+
   public static int[] Current(string name) {
     var dm = NewMode();
     if (!EnumDisplaySettings(name, -1, ref dm)) return null;
@@ -99,6 +109,18 @@ if ($mode) { $state.width = $mode[0]; $state.height = $mode[1]; $state.hz = $mod
 
 switch ($Action) {
   'status' { Out-Json $state }
+  'modes' { $state.modes = [VirtualDisplay]::Modes($name); Out-Json $state }
+  # Bağlıyken çözünürlük/hızı değiştir (konum korunur); bağlı değilse bu modla bağla.
+  'set' {
+    $px = if ($attached -and $mode) { $mode[3] } elseif ($X -ge 0) { $X } else { [VirtualDisplay]::PrimaryRight() }
+    $py = if ($attached -and $mode) { $mode[4] } else { $Y }
+    $r = [VirtualDisplay]::Apply($name, $Width, $Height, $Hz, $px, $py)
+    $state.result = $r
+    $state.ok = ($r -eq 0)
+    $now = [VirtualDisplay]::Current($name)
+    if ($now) { $state.attached = $true; $state.width = $now[0]; $state.height = $now[1]; $state.hz = $now[2]; $state.x = $now[3]; $state.y = $now[4] }
+    Out-Json $state
+  }
   'detach' {
     if ($attached) {
       $r = [VirtualDisplay]::Apply($name, 0, 0, 0, 0, 0)
